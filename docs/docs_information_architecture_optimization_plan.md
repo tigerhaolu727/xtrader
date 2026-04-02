@@ -27,6 +27,7 @@ docs/
     requirements/
     playbooks/
   03-delivery/
+    workshops/
     roadmap/
     specs/
     validation/
@@ -54,6 +55,7 @@ docs/
 | `docs/02-strategy/discussions/trading-strategy-bg.md` | 策略背景资料 |
 | `docs/03-delivery/roadmap/implementation-tasks-v0.3.md` | 交付路线图 |
 | `docs/03-delivery/roadmap/implementation-ready-checklist.md` | 实现前检查清单 |
+| `docs/03-delivery/workshops/*` | 需求/任务/BUG 对话式输入研讨 |
 | `docs/03-delivery/specs/*` | 任务规格库 |
 | `docs/03-delivery/validation/*` | 任务验证库 |
 | `docs/03-delivery/templates/*` | Spec/Validation 模板 |
