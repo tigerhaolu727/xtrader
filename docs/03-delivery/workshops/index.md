@@ -7,6 +7,8 @@
 
 | XTR-WS-001 | ThresholdIntradayStrategy策略重构清理 | task | approved | XTR-SP-011 | 2026-04-02 |
 
+| XTR-WS-002 | 信号决策回溯 | requirement | approved | XTR-SP-012 | 2026-04-02 |
+
 ## 维护规则
 1. 新建研讨时，必须在本索引追加一条记录。
 2. 研讨状态流转时，同步更新 `Status` 与 `Linked Task`。

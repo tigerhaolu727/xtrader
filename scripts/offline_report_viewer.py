@@ -47,6 +47,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     )
     print(f"viewer_root: {outputs['viewer_root']}")
     print(f"viewer_html_path: {outputs['viewer_html_path']}")
+    print(f"decision_trace_viewer_html_path: {outputs['decision_trace_viewer_html_path']}")
     print(f"echarts_path: {outputs['echarts_path']}")
     print(f"hyparquet_root: {outputs['hyparquet_root']}")
     print(f"hyparquet_bundle_path: {outputs['hyparquet_bundle_path']}")

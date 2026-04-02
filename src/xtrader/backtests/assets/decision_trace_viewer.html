@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>决策回溯查询页（Decision Trace Viewer）</title>
+  <script src="./vendor/hyparquet.bundle.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --accent: #0f766e;
+      --warn: #b45309;
+      --err: #b91c1c;
+    }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #ecfeff 0%, var(--bg) 42%);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
+    }
+    .wrap {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .title {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .sub {
+      margin: 0 0 14px 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .controls input,
+    .controls select,
+    .controls button,
+    .controls a {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 12px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .controls button {
+      cursor: pointer;
+    }
+    .status {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .status.warn { color: var(--warn); }
+    .status.err { color: var(--err); }
+    .layout {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .list {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 360px;
+      max-height: 72vh;
+      overflow: auto;
+      background: #fff;
+    }
+    .list-empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 12px;
+    }
+    .item {
+      width: 100%;
+      display: block;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      padding: 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .item:hover {
+      background: #f8fafc;
+    }
+    .item.active {
+      background: #eff6ff;
+    }
+    .item .line {
+      display: block;
+      margin-bottom: 3px;
+    }
+    .detail {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      min-height: 360px;
+      max-height: 72vh;
+      overflow: auto;
+    }
+    .section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+    .section h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .section .toggle {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      row-gap: 6px;
+      column-gap: 8px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .k {
+      color: var(--muted);
+      word-break: break-word;
+    }
+    .v {
+      word-break: break-word;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      font-family: "IBM Plex Mono", monospace;
+      line-height: 1.45;
+    }
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .list,
+      .detail {
+        max-height: none;
+      }
+      .kv {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title">决策回溯查询页（Decision Trace Viewer）</h1>
+    <p class="sub">选择单个 Run 目录后，按 <code>symbol + execution_time + action</code> 查询 decision trace；若 action 留空，将返回候选列表供二次精确定位。</p>
+
+    <div class="panel">
+      <div class="controls">
+        <label for="runDir"><strong>Run目录（Run Directory）</strong></label>
+        <input id="runDir" type="file" webkitdirectory directory multiple />
+        <button id="reloadBtn" type="button">重新加载</button>
+        <a href="./offline_report_viewer.html" target="_blank" rel="noopener noreferrer">打开 Report Viewer</a>
+      </div>
+      <div id="runDirInfo" class="status">未选择 Run 目录；也可通过 Report Viewer 直接带入查询上下文。</div>
+      <div class="controls">
+        <label for="symbolInput">symbol</label>
+        <input id="symbolInput" type="text" placeholder="自动填充" readonly />
+        <label for="executionInput">execution_time</label>
+        <input id="executionInput" type="text" placeholder="例如 2026-01-01T00:00:00Z" />
+        <label for="actionInput">action</label>
+        <select id="actionInput">
+          <option value="">(Any)</option>
+          <option value="ENTER">ENTER</option>
+          <option value="EXIT">EXIT</option>
+          <option value="HOLD">HOLD</option>
+        </select>
+        <button id="queryBtn" type="button">查询</button>
+        <button id="clearBtn" type="button">清空</button>
+      </div>
+      <div id="status" class="status">等待选择 Run 目录。</div>
+    </div>
+
+    <div class="panel layout">
+      <div>
+        <h2>候选记录（Candidates）</h2>
+        <div id="candidateList" class="list"></div>
+      </div>
+      <div>
+        <h2>决策详情（Decision Detail）</h2>
+        <div id="detailPane" class="detail"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const runDirInput = document.getElementById("runDir");
+      const reloadBtn = document.getElementById("reloadBtn");
+      const symbolInput = document.getElementById("symbolInput");
+      const executionInput = document.getElementById("executionInput");
+      const actionInput = document.getElementById("actionInput");
+      const queryBtn = document.getElementById("queryBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const statusEl = document.getElementById("status");
+      const runDirInfoEl = document.getElementById("runDirInfo");
+      const candidateList = document.getElementById("candidateList");
+      const detailPane = document.getElementById("detailPane");
+
+      const state = {
+        files: new Map(),
+        runRootPrefix: "",
+        manifest: null,
+        bounds: { min: null, max: null },
+        chunkSets: {},
+        chunkManifest: null,
+        chunkCache: new Map(),
+        fullParquetPath: null,
+        fullParquetCache: null,
+        queryResult: [],
+        selectedIndex: -1,
+      };
+      const DECISION_TRACE_HANDOFF_TYPE = "xtrader_decision_trace_handoff_v1";
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const initialParams = {
+        symbol: String(urlParams.get("symbol") || "").toUpperCase(),
+        executionTime: String(urlParams.get("execution_time") || ""),
+        action: String(urlParams.get("action") || "").toUpperCase(),
+      };
+
+      const setStatus = (text, level) => {
+        statusEl.textContent = text;
+        statusEl.className = "status" + (level ? (" " + level) : "");
+      };
+
+      const setRunDirInfo = (text, level) => {
+        if (!runDirInfoEl) return;
+        runDirInfoEl.textContent = text;
+        runDirInfoEl.className = "status" + (level ? (" " + level) : "");
+      };
+
+      const normPath = (value) => String(value || "").replace(/^\.?\//, "").replace(/\\/g, "/");
+
+      const _manifestSuffix = "/run_manifest.json";
+
+      const detectManifestCandidate = () => {
+        const matches = [];
+        for (const [key, file] of state.files.entries()) {
+          if (key === "run_manifest.json" || key.endsWith(_manifestSuffix)) {
+            matches.push({ key, file });
+          }
+        }
+        if (!matches.length) return { ok: false, reason: "missing", file: null, key: "" };
+        if (matches.length > 1) return { ok: false, reason: "multiple", file: null, key: "" };
+        return { ok: true, reason: "ok", file: matches[0].file, key: matches[0].key };
+      };
+
+      const resolveRunRootPrefix = (manifestKey) => {
+        const key = normPath(manifestKey);
+        if (!key || key === "run_manifest.json") return "";
+        if (key.endsWith(_manifestSuffix)) return key.slice(0, -_manifestSuffix.length);
+        return "";
+      };
+
+      const findFile = (artifactPath) => {
+        const normalized = normPath(artifactPath);
+        if (!normalized) return null;
+        const prefix = normPath(state.runRootPrefix || "");
+        if (prefix) {
+          const prefixed = normPath(prefix + "/" + normalized);
+          if (state.files.has(prefixed)) return state.files.get(prefixed);
+        }
+        if (state.files.has(normalized)) return state.files.get(normalized);
+        const base = normalized.split("/").pop();
+        if (!base) return null;
+        if (prefix) {
+          const scope = prefix + "/";
+          for (const [key, file] of state.files.entries()) {
+            if (!key.startsWith(scope)) continue;
+            if (key.endsWith("/" + base) || key === base) return file;
+          }
+        }
+        for (const [key, file] of state.files.entries()) {
+          if (key.endsWith("/" + base) || key === base) return file;
+        }
+        return null;
+      };
+
+      const readFileText = async (file) => await file.text();
+
+      const parseUtcMs = (value) => {
+        if (value instanceof Date) {
+          const ts = value.getTime();
+          return Number.isFinite(ts) ? ts : null;
+        }
+        if (typeof value === "number") return Number.isFinite(value) ? value : null;
+        if (typeof value === "bigint") {
+          const n = Number(value);
+          return Number.isFinite(n) ? n : null;
+        }
+        const ts = Date.parse(String(value || ""));
+        return Number.isFinite(ts) ? ts : null;
+      };
+
+      const escapeHtml = (value) => String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+      const toNum = (v) => {
+        const n = Number.parseFloat(String(v));
+        return Number.isFinite(n) ? n : NaN;
+      };
+
+      const jsonText = (value) => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === "string") return value;
+        try {
+          return JSON.stringify(value);
+        } catch (_err) {
+          return String(value);
+        }
+      };
+
+      const loadHyparquet = async () => {
+        const api = window.hyparquet;
+        if (!api || typeof api.parquetReadObjects !== "function") {
+          throw new Error("hyparquet 初始化失败，请重新执行 offline_report_viewer.py init。");
+        }
+        return api;
+      };
+
+      const toAsyncBuffer = (file) => ({
+        byteLength: Number(file && file.size) || 0,
+        slice: (start, end) => file.slice(start, end).arrayBuffer(),
+      });
+
+      const parseParquet = async (file) => {
+        const { parquetReadObjects } = await loadHyparquet();
+        const rows = await parquetReadObjects({ file: toAsyncBuffer(file), rowFormat: "object" });
+        return Array.isArray(rows) ? rows : [];
+      };
+
+      const parseDecisionTraceRow = (row) => ({
+        runId: String(row.run_id || row.runId || ""),
+        symbol: String(row.symbol || "").toUpperCase(),
+        signalTime: String(row.signal_time || row.signalTime || ""),
+        executionTime: String(row.execution_time || row.executionTime || ""),
+        signalTs: parseUtcMs(row.signal_time || row.signalTime),
+        executionTs: parseUtcMs(row.execution_time || row.executionTime),
+        action: String(row.action || "").toUpperCase(),
+        actionRaw: String(row.action_raw || row.actionRaw || "").toUpperCase(),
+        reason: String(row.reason || ""),
+        state: String(row.state || ""),
+        scoreTotal: toNum(row.score_total !== undefined ? row.score_total : row.scoreTotal),
+        featureValuesJson: jsonText(row.feature_values_json !== undefined ? row.feature_values_json : row.featureValuesJson),
+        requiredFeatureRefsJson: jsonText(row.required_feature_refs_json !== undefined ? row.required_feature_refs_json : row.requiredFeatureRefsJson),
+        requiredFeatureValuesJson: jsonText(
+          row.required_feature_values_json !== undefined ? row.required_feature_values_json : row.requiredFeatureValuesJson
+        ),
+        ruleResultsJson: jsonText(row.rule_results_json !== undefined ? row.rule_results_json : row.ruleResultsJson),
+        groupScoresJson: jsonText(row.group_scores_json !== undefined ? row.group_scores_json : row.groupScoresJson),
+        groupWeightsJson: jsonText(row.group_weights_json !== undefined ? row.group_weights_json : row.groupWeightsJson),
+        signalDecisionJson: jsonText(row.signal_decision_json !== undefined ? row.signal_decision_json : row.signalDecisionJson),
+        riskDecisionJson: jsonText(row.risk_decision_json !== undefined ? row.risk_decision_json : row.riskDecisionJson),
+        actionResultJson: jsonText(row.action_result_json !== undefined ? row.action_result_json : row.actionResultJson),
+      });
+
+      const overlapWindow = (startA, endA, startB, endB) => {
+        if (!Number.isFinite(startA) || !Number.isFinite(endA) || !Number.isFinite(startB) || !Number.isFinite(endB)) return false;
+        return startA <= endB && endA >= startB;
+      };
+
+      const findDecisionTraceParquetPath = (manifest) => {
+        const artifacts = Array.isArray(manifest && manifest.artifacts) ? manifest.artifacts : [];
+        for (const item of artifacts) {
+          const path = normPath(item.path);
+          if (path.endsWith("timelines/decision_trace.parquet")) return path;
+        }
+        return null;
+      };
+
+      const loadChunkManifest = async () => {
+        const setInfo = state.chunkSets.decision_trace;
+        if (!setInfo || !setInfo.manifest_path) return null;
+        const file = findFile(setInfo.manifest_path);
+        if (!file) return null;
+        return JSON.parse(await readFileText(file));
+      };
+
+      const loadChunkRows = async (start, end) => {
+        const manifest = state.chunkManifest;
+        if (!manifest || !Array.isArray(manifest.chunks)) return null;
+        const needed = manifest.chunks.filter((chunk) => {
+          const cMin = parseUtcMs(chunk.min_time);
+          const cMax = parseUtcMs(chunk.max_time);
+          return overlapWindow(cMin, cMax, start, end);
+        });
+        for (const chunk of needed) {
+          const chunkId = String(chunk.id || "");
+          if (!chunkId || state.chunkCache.has(chunkId)) continue;
+          const file = findFile(chunk.file);
+          if (!file) continue;
+          const rows = (await parseParquet(file))
+            .map(parseDecisionTraceRow)
+            .filter((row) => Number.isFinite(row.executionTs))
+            .sort((a, b) => a.executionTs - b.executionTs);
+          state.chunkCache.set(chunkId, rows);
+        }
+        const merged = [];
+        for (const chunk of needed) {
+          const chunkId = String(chunk.id || "");
+          if (!chunkId) continue;
+          const rows = state.chunkCache.get(chunkId) || [];
+          for (const row of rows) {
+            if (!Number.isFinite(row.executionTs) || !overlapWindow(row.executionTs, row.executionTs, start, end)) continue;
+            merged.push(row);
+          }
+        }
+        return merged.sort((a, b) => a.executionTs - b.executionTs);
+      };
+
+      const loadFullParquetRows = async (start, end) => {
+        if (!state.fullParquetPath) return [];
+        if (!Array.isArray(state.fullParquetCache)) {
+          const file = findFile(state.fullParquetPath);
+          if (!file) return [];
+          state.fullParquetCache = (await parseParquet(file))
+            .map(parseDecisionTraceRow)
+            .filter((row) => Number.isFinite(row.executionTs))
+            .sort((a, b) => a.executionTs - b.executionTs);
+        }
+        return state.fullParquetCache.filter((row) => overlapWindow(row.executionTs, row.executionTs, start, end));
+      };
+
+      const loadDecisionTraceRows = async (start, end) => {
+        const chunkRows = await loadChunkRows(start, end);
+        if (Array.isArray(chunkRows)) return chunkRows;
+        return await loadFullParquetRows(start, end);
+      };
+
+      const extractBounds = (manifest) => {
+        const decisionSet = (manifest && manifest.chunk_sets && manifest.chunk_sets.decision_trace) || null;
+        let minTs = parseUtcMs(decisionSet && decisionSet.min_time);
+        let maxTs = parseUtcMs(decisionSet && decisionSet.max_time);
+        if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
+          const artifacts = Array.isArray(manifest && manifest.artifacts) ? manifest.artifacts : [];
+          for (const item of artifacts) {
+            const path = normPath(item.path);
+            if (!path.endsWith("timelines/decision_trace.parquet")) continue;
+            const s = parseUtcMs(item.min_time);
+            const e = parseUtcMs(item.max_time);
+            if (Number.isFinite(s)) minTs = Number.isFinite(minTs) ? Math.min(minTs, s) : s;
+            if (Number.isFinite(e)) maxTs = Number.isFinite(maxTs) ? Math.max(maxTs, e) : e;
+          }
+        }
+        return {
+          min: Number.isFinite(minTs) ? minTs : null,
+          max: Number.isFinite(maxTs) ? maxTs : null,
+        };
+      };
+
+      const parseJsonPayload = (text) => {
+        if (text === null || text === undefined || String(text).trim() === "") {
+          return { ok: true, value: null, raw: "" };
+        }
+        const raw = String(text);
+        try {
+          return { ok: true, value: JSON.parse(raw), raw };
+        } catch (error) {
+          return { ok: false, value: null, raw, error: String(error) };
+        }
+      };
+
+      const renderCandidateList = () => {
+        const rows = state.queryResult || [];
+        if (!rows.length) {
+          candidateList.innerHTML = "<div class='list-empty'>暂无候选记录。</div>";
+          return;
+        }
+        candidateList.innerHTML = rows.map((row, idx) => {
+          const active = idx === state.selectedIndex ? " active" : "";
+          const score = Number.isFinite(row.scoreTotal) ? row.scoreTotal.toFixed(6) : "NA";
+          return (
+            "<button class='item" + active + "' data-idx='" + idx + "' type='button'>"
+            + "<span class='line'><strong>" + escapeHtml(row.executionTime || new Date(row.executionTs).toISOString()) + "</strong></span>"
+            + "<span class='line'>action=" + escapeHtml(row.action || "NA") + " | state=" + escapeHtml(row.state || "NA") + "</span>"
+            + "<span class='line'>reason=" + escapeHtml(row.reason || "NA") + " | score=" + escapeHtml(score) + "</span>"
+            + "</button>"
+          );
+        }).join("");
+        candidateList.querySelectorAll(".item[data-idx]").forEach((node) => {
+          node.addEventListener("click", () => {
+            const idx = Number.parseInt(String(node.getAttribute("data-idx") || "-1"), 10);
+            if (!(idx >= 0 && idx < state.queryResult.length)) return;
+            state.selectedIndex = idx;
+            renderCandidateList();
+            renderDetail();
+          });
+        });
+      };
+
+      const renderJsonSection = (title, text) => {
+        const parsed = parseJsonPayload(text);
+        const section = document.createElement("div");
+        section.className = "section";
+
+        const head = document.createElement("div");
+        head.className = "section-head";
+        const h = document.createElement("h3");
+        h.textContent = title;
+        head.appendChild(h);
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "toggle";
+        toggleBtn.textContent = "查看原始 JSON";
+        head.appendChild(toggleBtn);
+        section.appendChild(head);
+
+        const meta = document.createElement("div");
+        meta.className = "status";
+        if (!parsed.ok) {
+          meta.className = "status warn";
+          meta.textContent = "JSON 解析失败，已降级原文展示：" + parsed.error;
+        } else {
+          meta.textContent = parsed.value === null ? "空值" : "结构化展示";
+        }
+        section.appendChild(meta);
+
+        const content = document.createElement("pre");
+        section.appendChild(content);
+
+        let rawMode = !parsed.ok;
+        const renderContent = () => {
+          if (rawMode) {
+            content.textContent = parsed.raw || "";
+            toggleBtn.textContent = "查看结构化";
+          } else {
+            if (parsed.value === null) {
+              content.textContent = "(null)";
+            } else if (typeof parsed.value === "string") {
+              content.textContent = parsed.value;
+            } else {
+              content.textContent = JSON.stringify(parsed.value, null, 2);
+            }
+            toggleBtn.textContent = "查看原始 JSON";
+          }
+        };
+        toggleBtn.addEventListener("click", () => {
+          rawMode = !rawMode;
+          renderContent();
+        });
+        renderContent();
+        return section;
+      };
+
+      const renderDetail = () => {
+        const rows = state.queryResult || [];
+        if (!(state.selectedIndex >= 0 && state.selectedIndex < rows.length)) {
+          detailPane.innerHTML = "<div class='empty'>请选择左侧候选记录查看决策详情。</div>";
+          return;
+        }
+        const row = rows[state.selectedIndex];
+        detailPane.innerHTML = "";
+
+        const basic = document.createElement("div");
+        basic.className = "section";
+        basic.innerHTML = (
+          "<h3>1. 基本信息</h3>"
+          + "<div class='kv'>"
+          + "<div class='k'>run_id</div><div class='v'>" + escapeHtml(row.runId || "") + "</div>"
+          + "<div class='k'>symbol</div><div class='v'>" + escapeHtml(row.symbol || "") + "</div>"
+          + "<div class='k'>signal_time</div><div class='v'>" + escapeHtml(row.signalTime || "") + "</div>"
+          + "<div class='k'>execution_time</div><div class='v'>" + escapeHtml(row.executionTime || "") + "</div>"
+          + "<div class='k'>action / action_raw</div><div class='v'>" + escapeHtml((row.action || "") + " / " + (row.actionRaw || "")) + "</div>"
+          + "<div class='k'>state</div><div class='v'>" + escapeHtml(row.state || "") + "</div>"
+          + "<div class='k'>score_total</div><div class='v'>" + escapeHtml(Number.isFinite(row.scoreTotal) ? row.scoreTotal.toFixed(8) : "NA") + "</div>"
+          + "<div class='k'>reason</div><div class='v'>" + escapeHtml(row.reason || "") + "</div>"
+          + "</div>"
+        );
+        detailPane.appendChild(basic);
+
+        detailPane.appendChild(renderJsonSection("2. Feature 全量（feature_values_json）", row.featureValuesJson));
+        detailPane.appendChild(renderJsonSection("3. Feature 子集（required_feature_refs_json + required_feature_values_json）", JSON.stringify({
+          required_feature_refs_json: parseJsonPayload(row.requiredFeatureRefsJson).ok
+            ? parseJsonPayload(row.requiredFeatureRefsJson).value
+            : row.requiredFeatureRefsJson,
+          required_feature_values_json: parseJsonPayload(row.requiredFeatureValuesJson).ok
+            ? parseJsonPayload(row.requiredFeatureValuesJson).value
+            : row.requiredFeatureValuesJson,
+        })));
+        detailPane.appendChild(renderJsonSection("4. 评分链（rule_results/group_scores/group_weights）", JSON.stringify({
+          rule_results_json: parseJsonPayload(row.ruleResultsJson).ok
+            ? parseJsonPayload(row.ruleResultsJson).value
+            : row.ruleResultsJson,
+          group_scores_json: parseJsonPayload(row.groupScoresJson).ok
+            ? parseJsonPayload(row.groupScoresJson).value
+            : row.groupScoresJson,
+          group_weights_json: parseJsonPayload(row.groupWeightsJson).ok
+            ? parseJsonPayload(row.groupWeightsJson).value
+            : row.groupWeightsJson,
+        })));
+        detailPane.appendChild(renderJsonSection("5. 信号链（signal_decision_json）", row.signalDecisionJson));
+        detailPane.appendChild(renderJsonSection("6. 风险链（risk_decision_json）", row.riskDecisionJson));
+        detailPane.appendChild(renderJsonSection("7. 最终结果（action_result_json）", row.actionResultJson));
+      };
+
+      const applyHandoffPayload = (payload) => {
+        if (!payload || payload.type !== DECISION_TRACE_HANDOFF_TYPE) return false;
+        const query = payload.query || {};
+        const handoffRows = Array.isArray(payload.rows) ? payload.rows : [];
+        const normalizedRows = handoffRows
+          .map(parseDecisionTraceRow)
+          .filter((row) => Number.isFinite(row.executionTs))
+          .sort((a, b) => {
+            if (b.executionTs !== a.executionTs) return b.executionTs - a.executionTs;
+            return String(a.action || "").localeCompare(String(b.action || ""));
+          });
+        const handoffSymbol = String(query.symbol || "").toUpperCase();
+        const handoffExecution = String(query.execution_time || "").trim();
+        const handoffAction = String(query.action || "").toUpperCase();
+        if (handoffSymbol) symbolInput.value = handoffSymbol;
+        if (handoffExecution) executionInput.value = handoffExecution;
+        if (handoffAction && ["ENTER", "EXIT", "HOLD"].includes(handoffAction)) {
+          actionInput.value = handoffAction;
+        }
+        state.queryResult = normalizedRows;
+        state.selectedIndex = normalizedRows.length ? 0 : -1;
+        renderCandidateList();
+        renderDetail();
+        const runMeta = payload.runMeta || {};
+        const runId = String(runMeta.run_id || runMeta.runId || "");
+        setRunDirInfo(
+          "当前数据来源：Report Viewer 直连"
+          + (runId ? ("（run_id=" + runId + "）") : "")
+          + "，无需再次选择 Run 目录。",
+        );
+        if (!normalizedRows.length) {
+          setStatus(
+            "已从 Report Viewer 接收查询条件（run_id=" + (runId || "unknown")
+            + "），但未附带候选记录。可直接点查询或选择 Run 目录继续。",
+            "warn",
+          );
+        } else {
+          setStatus(
+            "已从 Report Viewer 直接加载 " + normalizedRows.length + " 条候选记录"
+            + (runId ? ("（run_id=" + runId + "）") : "")
+            + "，无需再次选择 Run 目录。",
+          );
+        }
+        return true;
+      };
+
+      const runQuery = async () => {
+        if (!state.manifest) {
+          setStatus("请先选择并加载 Run 目录。", "warn");
+          return;
+        }
+        const executionText = String(executionInput.value || "").trim();
+        const executionMs = parseUtcMs(executionText);
+        if (!Number.isFinite(executionMs)) {
+          setStatus("execution_time 无效，请输入 UTC 时间（例如 2026-01-01T00:00:00Z）。", "warn");
+          return;
+        }
+
+        const symbol = String(symbolInput.value || "").trim().toUpperCase();
+        const action = String(actionInput.value || "").trim().toUpperCase();
+        const rows = await loadDecisionTraceRows(executionMs - 1, executionMs + 1);
+        let filtered = rows.filter((row) => row.executionTs === executionMs);
+        if (symbol) filtered = filtered.filter((row) => row.symbol === symbol);
+        if (action) filtered = filtered.filter((row) => row.action === action);
+        filtered = filtered.sort((a, b) => {
+          if (b.executionTs !== a.executionTs) return b.executionTs - a.executionTs;
+          return String(a.action || "").localeCompare(String(b.action || ""));
+        });
+
+        state.queryResult = filtered;
+        state.selectedIndex = filtered.length ? 0 : -1;
+        renderCandidateList();
+        renderDetail();
+
+        const queryKey = "symbol=" + (symbol || "(auto)")
+          + " | execution_time=" + new Date(executionMs).toISOString()
+          + " | action=" + (action || "(Any)");
+
+        if (!filtered.length) {
+          setStatus("未命中记录。查询键：" + queryKey, "warn");
+          return;
+        }
+        if (!action && filtered.length > 1) {
+          setStatus("命中 " + filtered.length + " 条候选（未指定 action）。请在左侧选择或补充 action 二次定位。查询键：" + queryKey, "warn");
+          return;
+        }
+        if (filtered.length > 1) {
+          setStatus("命中 " + filtered.length + " 条候选，请在左侧选择具体记录。查询键：" + queryKey, "warn");
+          return;
+        }
+        setStatus("命中 1 条记录。查询键：" + queryKey);
+      };
+
+      const loadFromFiles = async () => {
+        const files = Array.from(runDirInput.files || []);
+        state.files.clear();
+        state.runRootPrefix = "";
+        state.manifest = null;
+        state.bounds = { min: null, max: null };
+        state.chunkSets = {};
+        state.chunkManifest = null;
+        state.chunkCache.clear();
+        state.fullParquetPath = null;
+        state.fullParquetCache = null;
+        state.queryResult = [];
+        state.selectedIndex = -1;
+        renderCandidateList();
+        renderDetail();
+
+        if (!files.length) {
+          setRunDirInfo("未选择 Run 目录；也可通过 Report Viewer 直接带入查询上下文。");
+          setStatus("未选择任何文件。", "warn");
+          return;
+        }
+
+        const rel0 = String(files[0].webkitRelativePath || files[0].name || "");
+        const runDirName = rel0.includes("/") ? rel0.split("/")[0] : rel0;
+        if (runDirName) {
+          setRunDirInfo("当前 Run 目录：" + runDirName + "（文件数=" + files.length + "）");
+        } else {
+          setRunDirInfo("已选择 Run 目录（文件数=" + files.length + "）");
+        }
+
+        for (const file of files) {
+          const rel = normPath(file.webkitRelativePath || file.name);
+          const parts = rel.split("/");
+          const normalizedRel = parts.length > 1 ? parts.slice(1).join("/") : rel;
+          state.files.set(normPath(normalizedRel), file);
+        }
+
+        const manifestCandidate = detectManifestCandidate();
+        if (!manifestCandidate.ok) {
+          if (manifestCandidate.reason === "missing") {
+            setRunDirInfo("目录中未找到 run_manifest.json，请改为选择单个 Run 目录。", "err");
+            setStatus("加载失败：所选目录未找到 run_manifest.json，请选择单个回测 Run 目录。", "err");
+            return;
+          }
+          if (manifestCandidate.reason === "multiple") {
+            setRunDirInfo("目录中存在多个 run_manifest.json，请改为选择单个 Run 目录。", "err");
+            setStatus("加载失败：所选目录中发现多个 run_manifest.json，请改为选择单个 Run 目录。", "err");
+            return;
+          }
+        }
+
+        try {
+          state.runRootPrefix = resolveRunRootPrefix(manifestCandidate.key);
+          const manifest = JSON.parse(await readFileText(manifestCandidate.file));
+          state.manifest = manifest;
+          state.chunkSets = manifest.chunk_sets || {};
+          state.chunkManifest = await loadChunkManifest();
+          state.fullParquetPath = findDecisionTraceParquetPath(manifest);
+          state.bounds = extractBounds(manifest);
+
+          if (!Number.isFinite(state.bounds.min) || !Number.isFinite(state.bounds.max)) {
+            setStatus("manifest 缺少 decision_trace 时间范围，无法执行查询。", "err");
+            return;
+          }
+
+          const manifestSymbol = String(manifest.symbol || "").toUpperCase();
+          if (manifestSymbol) symbolInput.value = manifestSymbol;
+          if (initialParams.symbol) symbolInput.value = initialParams.symbol;
+          if (initialParams.executionTime && !executionInput.value) executionInput.value = initialParams.executionTime;
+          if (initialParams.action && ["ENTER", "EXIT", "HOLD"].includes(initialParams.action)) {
+            actionInput.value = initialParams.action;
+          }
+          setRunDirInfo(
+            "当前数据来源：手动选择 Run 目录"
+            + (manifest.run_id ? ("（run_id=" + String(manifest.run_id) + "）") : "")
+            + "。",
+          );
+
+          setStatus(
+            "已加载 run_id=" + String(manifest.run_id || "unknown")
+            + " | symbol=" + String(symbolInput.value || "(auto)")
+            + " | 时间范围=" + new Date(state.bounds.min).toISOString() + " ~ " + new Date(state.bounds.max).toISOString()
+            + " | 数据模式=" + (state.chunkManifest ? "分块（chunk）" : "Parquet"),
+          );
+
+          if (String(executionInput.value || "").trim()) {
+            await runQuery();
+          }
+        } catch (error) {
+          setStatus("加载失败: " + String(error), "err");
+        }
+      };
+
+      const clearQuery = () => {
+        executionInput.value = "";
+        actionInput.value = "";
+        state.queryResult = [];
+        state.selectedIndex = -1;
+        renderCandidateList();
+        renderDetail();
+        if (state.manifest) {
+          setStatus("查询条件已清空。请重新输入 execution_time 与 action。", "");
+        } else {
+          setStatus("等待选择 Run 目录。", "");
+        }
+      };
+
+      renderCandidateList();
+      renderDetail();
+      if (initialParams.symbol) symbolInput.value = initialParams.symbol;
+      if (initialParams.executionTime) executionInput.value = initialParams.executionTime;
+      if (initialParams.action && ["ENTER", "EXIT", "HOLD"].includes(initialParams.action)) {
+        actionInput.value = initialParams.action;
+      }
+      window.addEventListener("message", (event) => {
+        try {
+          applyHandoffPayload(event.data);
+        } catch (_error) {
+          // Keep viewer usable even if handoff payload is malformed.
+        }
+      });
+
+      if (runDirInput) runDirInput.addEventListener("change", loadFromFiles);
+      if (reloadBtn) reloadBtn.addEventListener("click", loadFromFiles);
+      if (queryBtn) queryBtn.addEventListener("click", runQuery);
+      if (clearBtn) clearBtn.addEventListener("click", clearQuery);
+      if (executionInput) executionInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          runQuery();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

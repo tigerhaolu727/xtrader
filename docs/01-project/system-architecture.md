@@ -38,8 +38,8 @@
 |---|---|---|---|
 | M2.1 Strategy Protocol | 策略输入输出契约 | 已实现 | 增加多周期元信息字段 |
 | M2.2 Feature Layer | 指标/特征计算 | 基础具备 | 完成五维评分特征化 |
-| M2.3 Regime-Aware Scoring | 市场状态+评分+权重一体化 | 设计阶段 | 统一静态/动态权重、状态切换、防抖与归一化 |
-| M2.4 Signal Engine | 分值映射动作 | 已有阈值策略 | 扩展信号强度分级、确认机制与冲突处理 |
+| M2.3 Regime-Aware Scoring | 市场状态+评分+权重一体化 | 已实现（XTR-SP-004 最小闭环） | 统一静态/动态权重、状态切换、防抖与归一化 |
+| M2.4 Signal Engine | 分值映射动作 | 已实现（Profile SignalEngine） | 扩展信号强度分级、确认机制与冲突处理 |
 | M2.5 Multi-TF Fusion | 多周期融合逻辑 | 未系统化 | 高周期方向与低周期择时规则化 |
 
 #### M2 补充约束（评分型策略与直判策略并存）
@@ -178,3 +178,5 @@
    - 最后运行 profile smoke 回测生成标准产物。
 4. 操作手册索引：
    - `docs/02-strategy/playbooks/strategy-profile-playbook.md`
+5. 历史阈值策略口径：
+   - `ThresholdIntradayStrategy` 已在 `XTR-SP-011` 全量下线，不再作为兼容入口保留。

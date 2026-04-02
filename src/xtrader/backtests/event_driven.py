@@ -764,6 +764,7 @@ _SNAPSHOT_MANIFEST_FILENAME = "snapshot_manifest.json"
 _RESAMPLED_MANIFEST_FILENAME = "resampled_manifest.json"
 _TIMELINE_DIRNAME = "timelines"
 _SIGNAL_EXECUTION_FILENAME = "signal_execution.parquet"
+_DECISION_TRACE_FILENAME = "decision_trace.parquet"
 _LEDGER_DIRNAME = "ledgers"
 _CURVE_DIRNAME = "curves"
 _TRADES_PARQUET_FILENAME = "trades.parquet"
@@ -775,6 +776,7 @@ _CHUNKSET_PRICE_ROWS = 20_000
 _CHUNKSET_TRADE_ROWS = 5_000
 _CHUNKSET_EQUITY_ROWS = 20_000
 _CHUNKSET_TIMELINE_ROWS = 20_000
+_CHUNKSET_DECISION_TRACE_ROWS = 20_000
 
 
 def _slugify_name(value: str) -> str:
@@ -817,6 +819,7 @@ def write_strategy_event_driven_outputs(
     strategy_name: str,
     config: EventDrivenBacktestConfig,
     result: EventDrivenBacktestResult,
+    decision_trace: pd.DataFrame | None = None,
     price_frame: pd.DataFrame | None = None,
     actions: pd.DataFrame | None = None,
     signal_interval_ms: int | None = None,
@@ -838,6 +841,7 @@ def write_strategy_event_driven_outputs(
         collection_root=Path(report_base),
         config=config,
         result=result,
+        decision_trace=decision_trace,
         price_frame=price_frame,
         actions=actions,
         signal_interval_ms=signal_interval_ms,
@@ -855,6 +859,7 @@ def write_event_driven_outputs(
     collection_root: Path | None = None,
     config: EventDrivenBacktestConfig,
     result: EventDrivenBacktestResult,
+    decision_trace: pd.DataFrame | None = None,
     price_frame: pd.DataFrame | None = None,
     actions: pd.DataFrame | None = None,
     signal_interval_ms: int | None = None,
@@ -874,6 +879,7 @@ def write_event_driven_outputs(
     trades_parquet_path = ledger_root / _TRADES_PARQUET_FILENAME
     equity_parquet_path = curve_root / _EQUITY_PARQUET_FILENAME
     timeline_path = timeline_root / _SIGNAL_EXECUTION_FILENAME
+    decision_trace_path = timeline_root / _DECISION_TRACE_FILENAME
     run_manifest_path = report_root / _RUN_MANIFEST_FILENAME
 
     summary_payload = asdict(result.summary)
@@ -897,12 +903,22 @@ def write_event_driven_outputs(
         result=result,
         target_path=timeline_path,
     )
+    decision_trace_outputs = _write_decision_trace_timeline(
+        report_root=report_root,
+        decision_trace=decision_trace,
+        action_snapshot=result.action_input_snapshot,
+        config=config,
+        run_id=str(report_root.name),
+        symbol=str(config.symbol),
+        target_path=decision_trace_path,
+    )
     chunk_outputs = _write_standard_chunk_sets(
         report_root=report_root,
         prices=result.price_input_snapshot,
         trades=result.trades,
         equity_curve=result.equity_curve,
         signal_execution=timeline_outputs["signal_execution_frame"],
+        decision_trace=decision_trace_outputs["decision_trace_frame"],
     )
     ledger_manifest_name: str | None = None
     if len(result.trades.index) > _LEDGER_CHUNK_THRESHOLD:
@@ -951,6 +967,12 @@ def write_event_driven_outputs(
             frame=timeline_outputs["signal_execution_frame"],
             time_columns=["signal_time", "execution_time"],
         ),
+        _build_frame_artifact(
+            report_root=report_root,
+            path=decision_trace_outputs["decision_trace_path"],
+            frame=decision_trace_outputs["decision_trace_frame"],
+            time_columns=["signal_time", "execution_time"],
+        ),
     ]
     for chunk_info in chunk_outputs.values():
         artifacts.append(
@@ -996,10 +1018,12 @@ def write_event_driven_outputs(
         "snapshot_manifest_path": str(snapshot_outputs["snapshot_manifest_path"]),
         "resampled_manifest_path": str(snapshot_outputs["resampled_manifest_path"]),
         "signal_execution_path": str(timeline_outputs["signal_execution_path"]),
+        "decision_trace_path": str(decision_trace_outputs["decision_trace_path"]),
         "price_chunks_manifest_path": str(chunk_outputs["prices"]["manifest_path"]),
         "trades_chunks_manifest_path": str(chunk_outputs["trades"]["manifest_path"]),
         "equity_chunks_manifest_path": str(chunk_outputs["equity"]["manifest_path"]),
         "signal_execution_chunks_manifest_path": str(chunk_outputs["signal_execution"]["manifest_path"]),
+        "decision_trace_chunks_manifest_path": str(chunk_outputs["decision_trace"]["manifest_path"]),
     }
     for timeframe, path in snapshot_outputs["resampled_paths"].items():
         outputs[f"resampled_{timeframe}_path"] = str(path)
@@ -1174,6 +1198,183 @@ def _write_signal_execution_timeline(
     }
 
 
+def _normalize_decision_action(value: Any) -> str:
+    raw = str(value or "").strip().upper()
+    if raw in {"ENTER", "ENTER_LONG", "ENTER_SHORT", "REVERSE"}:
+        return "ENTER"
+    if raw == "EXIT":
+        return "EXIT"
+    return "HOLD"
+
+
+def _json_safe_nested(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe_nested(raw) for key, raw in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_nested(item) for item in value]
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        return value.isoformat()
+    if value is None:
+        return None
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        try:
+            scalar = value.item()
+            if scalar is not value:
+                return _json_safe_nested(scalar)
+        except Exception:  # pragma: no cover - defensive
+            pass
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:  # pragma: no cover - defensive
+        pass
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        return _json_safe_value(float(value))
+    return value
+
+
+def _serialize_json_value(value: Any) -> str | None:
+    normalized = _json_safe_nested(value)
+    if normalized is None:
+        return None
+    if isinstance(normalized, str):
+        text = normalized.strip()
+        if not text:
+            return None
+        try:
+            json.loads(text)
+            return text
+        except Exception:
+            return json.dumps(text, ensure_ascii=True)
+    return json.dumps(normalized, ensure_ascii=True)
+
+
+def _write_decision_trace_timeline(
+    *,
+    report_root: Path,
+    decision_trace: pd.DataFrame | None,
+    action_snapshot: pd.DataFrame,
+    config: EventDrivenBacktestConfig,
+    run_id: str,
+    symbol: str,
+    target_path: Path | None = None,
+) -> dict[str, Any]:
+    timeline_path = target_path or (report_root / _TIMELINE_DIRNAME / _DECISION_TRACE_FILENAME)
+    timeline_path.parent.mkdir(parents=True, exist_ok=True)
+    lag_ms = int(config.execution_lag_bars) * int(config.interval_ms)
+    lag_delta = pd.to_timedelta(lag_ms, unit="ms")
+
+    frame = decision_trace.copy(deep=True) if isinstance(decision_trace, pd.DataFrame) else pd.DataFrame()
+    if frame.empty:
+        frame = action_snapshot.copy(deep=True)
+        frame["action_raw"] = frame["action"] if "action" in frame.columns else pd.Series(dtype="object")
+        frame["state"] = pd.Series(dtype="object")
+        frame["score_total"] = pd.Series(dtype="float64")
+        frame["feature_values"] = None
+        frame["required_feature_refs"] = None
+        frame["required_feature_values"] = None
+        frame["rule_results"] = None
+        frame["group_scores"] = None
+        frame["group_weights"] = None
+        frame["signal_decision"] = None
+        frame["risk_decision"] = None
+        frame["action_result"] = None
+        if "reason" not in frame.columns:
+            frame["reason"] = pd.Series(dtype="object")
+        if "signal_time" not in frame.columns:
+            frame["signal_time"] = frame["timestamp"] if "timestamp" in frame.columns else pd.Series(dtype="object")
+
+    if "signal_time" not in frame.columns:
+        if "timestamp" in frame.columns:
+            frame["signal_time"] = frame["timestamp"]
+        elif "execution_time" in frame.columns:
+            frame["signal_time"] = pd.to_datetime(frame["execution_time"], utc=True, errors="coerce") - lag_delta
+        else:
+            frame["signal_time"] = pd.Series(dtype="object")
+    if "execution_time" not in frame.columns:
+        frame["execution_time"] = pd.to_datetime(frame["signal_time"], utc=True, errors="coerce") + lag_delta
+    if "symbol" not in frame.columns:
+        frame["symbol"] = symbol
+    if "action_raw" not in frame.columns:
+        frame["action_raw"] = frame["action"] if "action" in frame.columns else pd.Series(dtype="object")
+    if "action" not in frame.columns:
+        frame["action"] = frame["action_raw"]
+    if "reason" not in frame.columns:
+        frame["reason"] = pd.Series(dtype="object")
+    if "state" not in frame.columns:
+        frame["state"] = pd.Series(dtype="object")
+    if "score_total" not in frame.columns:
+        frame["score_total"] = pd.Series(dtype="float64")
+    frame["run_id"] = str(run_id)
+    frame["signal_time"] = pd.to_datetime(frame["signal_time"], utc=True, errors="coerce")
+    frame["execution_time"] = pd.to_datetime(frame["execution_time"], utc=True, errors="coerce")
+    frame["symbol"] = frame["symbol"].astype(str).str.upper()
+    frame["action_raw"] = frame["action_raw"].astype(str).str.upper()
+    frame["action"] = frame["action_raw"].map(_normalize_decision_action)
+    frame["reason"] = frame["reason"].astype(str)
+    frame["state"] = frame["state"].astype(str)
+    frame["score_total"] = pd.to_numeric(frame["score_total"], errors="coerce").astype("float64")
+
+    json_cols_map = {
+        "feature_values_json": ("feature_values_json", "feature_values"),
+        "required_feature_refs_json": ("required_feature_refs_json", "required_feature_refs"),
+        "required_feature_values_json": ("required_feature_values_json", "required_feature_values"),
+        "rule_results_json": ("rule_results_json", "rule_results"),
+        "group_scores_json": ("group_scores_json", "group_scores"),
+        "group_weights_json": ("group_weights_json", "group_weights"),
+        "signal_decision_json": ("signal_decision_json", "signal_decision"),
+        "risk_decision_json": ("risk_decision_json", "risk_decision"),
+        "action_result_json": ("action_result_json", "action_result"),
+    }
+    for target_col, candidates in json_cols_map.items():
+        source_col: str | None = None
+        for candidate in candidates:
+            if candidate in frame.columns:
+                source_col = candidate
+                break
+        if source_col is None:
+            frame[target_col] = None
+            continue
+        frame[target_col] = frame[source_col].map(_serialize_json_value)
+
+    frame = frame[
+        [
+            "run_id",
+            "symbol",
+            "signal_time",
+            "execution_time",
+            "action",
+            "action_raw",
+            "reason",
+            "state",
+            "score_total",
+            "feature_values_json",
+            "required_feature_refs_json",
+            "required_feature_values_json",
+            "rule_results_json",
+            "group_scores_json",
+            "group_weights_json",
+            "signal_decision_json",
+            "risk_decision_json",
+            "action_result_json",
+        ]
+    ].copy()
+    frame = frame.dropna(subset=["signal_time", "execution_time"]).sort_values(
+        ["execution_time", "signal_time", "symbol", "action_raw"]
+    ).reset_index(drop=True)
+    frame.to_parquet(timeline_path, index=False)
+    return {
+        "decision_trace_path": timeline_path,
+        "decision_trace_frame": frame,
+    }
+
+
 def _write_standard_chunk_sets(
     *,
     report_root: Path,
@@ -1181,6 +1382,7 @@ def _write_standard_chunk_sets(
     trades: pd.DataFrame,
     equity_curve: pd.DataFrame,
     signal_execution: pd.DataFrame,
+    decision_trace: pd.DataFrame,
 ) -> dict[str, dict[str, Any]]:
     return {
         "prices": _write_time_chunk_set(
@@ -1210,6 +1412,13 @@ def _write_standard_chunk_sets(
             frame=signal_execution,
             time_column="signal_time",
             rows_per_chunk=_CHUNKSET_TIMELINE_ROWS,
+        ),
+        "decision_trace": _write_time_chunk_set(
+            report_root=report_root,
+            dataset="decision_trace",
+            frame=decision_trace,
+            time_column="execution_time",
+            rows_per_chunk=_CHUNKSET_DECISION_TRACE_ROWS,
         ),
     }
 

@@ -22,9 +22,43 @@ from xtrader.strategy_profiles import (
     StrategyProfilePrecompileEngine,
 )
 
+_BASE_MODEL_COLUMNS: set[str] = {"timestamp", "symbol", "open", "high", "low", "close", "volume", "funding_rate"}
+
 
 def _default_profile_path() -> Path:
     return Path(__file__).resolve().parents[4] / "configs/strategy-profiles/five_min_regime_momentum/v0.3.json"
+
+
+def _json_compatible(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_compatible(raw) for key, raw in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_compatible(item) for item in value]
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        return value.isoformat()
+    if value is None:
+        return None
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        try:
+            scalar = value.item()
+            if scalar is not value:
+                return _json_compatible(scalar)
+        except Exception:  # pragma: no cover - defensive
+            pass
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:  # pragma: no cover - defensive
+        pass
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, float):
+        return float(value)
+    if isinstance(value, int):
+        return int(value)
+    return value
 
 
 class ProfileActionStrategy(BaseActionStrategy):
@@ -100,6 +134,19 @@ class ProfileActionStrategy(BaseActionStrategy):
             market_df=model_df,
             account_context=account_context,
         ).frame
+        decision_tf = str(regime_spec["decision_timeframe"])
+        full_indicator_plan_by_tf = dict(self._resolved_profile.get("indicator_plan_by_tf") or {})
+        full_decision_feature_df = self._feature_pipeline.build_model_df(
+            bars_df=bars_by_timeframe[decision_tf].copy(deep=True),
+            indicator_plan=list(full_indicator_plan_by_tf.get(decision_tf) or []),
+        )
+        decision_trace = self._build_decision_trace_frame(
+            model_df=model_df,
+            full_decision_feature_df=full_decision_feature_df,
+            scoring_df=scoring_df,
+            signal_df=signal_df,
+            risk_df=risk_df,
+        )
         actions = risk_df[list(DEFAULT_ACTION_OUTPUT_SCHEMA)].copy(deep=True).reset_index(drop=True)
         actions = actions.sort_values(["timestamp", "symbol"]).reset_index(drop=True)
 
@@ -125,9 +172,127 @@ class ProfileActionStrategy(BaseActionStrategy):
             strategy_version=self.version,
             actions=actions,
             diagnostics=diagnostics,
+            decision_trace=decision_trace,
         )
         result.validate_schema(self.spec().output_schema)
         return result
+
+    def _build_decision_trace_frame(
+        self,
+        *,
+        model_df: pd.DataFrame,
+        full_decision_feature_df: pd.DataFrame,
+        scoring_df: pd.DataFrame,
+        signal_df: pd.DataFrame,
+        risk_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        trace_columns = [
+            "signal_time",
+            "symbol",
+            "action_raw",
+            "reason",
+            "state",
+            "score_total",
+            "feature_values",
+            "required_feature_refs",
+            "required_feature_values",
+            "rule_results",
+            "group_scores",
+            "group_weights",
+            "signal_decision",
+            "risk_decision",
+            "action_result",
+        ]
+        if risk_df.empty:
+            return pd.DataFrame(columns=trace_columns)
+
+        scoring_view = (
+            scoring_df[["timestamp", "symbol", "rule_scores", "group_scores", "group_weights"]]
+            .copy(deep=True)
+            .reset_index(drop=True)
+        )
+        signal_view = (
+            signal_df[["timestamp", "symbol", "action", "reason_code", "matched_rule_id"]]
+            .copy(deep=True)
+            .rename(
+                columns={
+                    "action": "signal_action_raw",
+                    "reason_code": "signal_reason_code",
+                    "matched_rule_id": "signal_matched_rule_id",
+                }
+            )
+        )
+
+        merged = risk_df.copy(deep=True)
+        merged = merged.merge(scoring_view, on=["timestamp", "symbol"], how="left")
+        merged = merged.merge(signal_view, on=["timestamp", "symbol"], how="left")
+
+        required_feature_cols = [column for column in self._required_feature_refs if column in model_df.columns]
+        feature_view = model_df[["timestamp", "symbol", *required_feature_cols]].copy(deep=True)
+        full_feature_cols = [
+            column
+            for column in full_decision_feature_df.columns
+            if column not in _BASE_MODEL_COLUMNS and column not in feature_view.columns
+        ]
+        full_feature_view = full_decision_feature_df[["timestamp", "symbol", *full_feature_cols]].copy(deep=True)
+        feature_view = feature_view.merge(full_feature_view, on=["timestamp", "symbol"], how="left")
+        merged = merged.merge(feature_view, on=["timestamp", "symbol"], how="left")
+
+        rows: list[dict[str, Any]] = []
+        for row in merged.to_dict(orient="records"):
+            required_refs = list(self._required_feature_refs)
+            required_values = {ref: _json_compatible(row.get(ref)) for ref in required_refs}
+            feature_values = {column: _json_compatible(row.get(column)) for column in full_feature_cols}
+            for ref in required_refs:
+                feature_values[ref] = required_values.get(ref)
+
+            signal_decision = {
+                "action_raw": _json_compatible(row.get("signal_action_raw")),
+                "reason_code": _json_compatible(row.get("signal_reason_code")),
+                "matched_rule_id": _json_compatible(row.get("signal_matched_rule_id")),
+            }
+            risk_decision = {
+                "action_raw": _json_compatible(row.get("action")),
+                "reason_code": _json_compatible(row.get("reason_code")),
+                "size": _json_compatible(row.get("size")),
+                "stop_loss": _json_compatible(row.get("stop_loss")),
+                "take_profit": _json_compatible(row.get("take_profit")),
+                "time_stop_bars": _json_compatible(row.get("time_stop_bars")),
+                "matched_rule_id": _json_compatible(row.get("matched_rule_id")),
+            }
+            action_result = {
+                "timestamp": _json_compatible(row.get("timestamp")),
+                "symbol": _json_compatible(row.get("symbol")),
+                "action_raw": _json_compatible(row.get("action")),
+                "size": _json_compatible(row.get("size")),
+                "stop_loss": _json_compatible(row.get("stop_loss")),
+                "take_profit": _json_compatible(row.get("take_profit")),
+                "reason": _json_compatible(row.get("reason")),
+            }
+
+            rows.append(
+                {
+                    "signal_time": row.get("timestamp"),
+                    "symbol": str(row.get("symbol", "")),
+                    "action_raw": str(row.get("action", "")),
+                    "reason": str(row.get("reason", "")),
+                    "state": str(row.get("state", "")),
+                    "score_total": _json_compatible(row.get("score_total")),
+                    "feature_values": feature_values,
+                    "required_feature_refs": required_refs,
+                    "required_feature_values": required_values,
+                    "rule_results": _json_compatible(row.get("rule_scores")),
+                    "group_scores": _json_compatible(row.get("group_scores")),
+                    "group_weights": _json_compatible(row.get("group_weights")),
+                    "signal_decision": signal_decision,
+                    "risk_decision": risk_decision,
+                    "action_result": action_result,
+                }
+            )
+        output = pd.DataFrame(rows, columns=trace_columns)
+        output["signal_time"] = pd.to_datetime(output["signal_time"], utc=True, errors="coerce")
+        output = output.dropna(subset=["signal_time"]).sort_values(["signal_time", "symbol"]).reset_index(drop=True)
+        return output
 
 
 __all__ = ["ProfileActionStrategy"]

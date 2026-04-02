@@ -13,10 +13,12 @@ def test_initialize_offline_report_viewer_copies_assets(tmp_path) -> None:
     outputs = initialize_offline_report_viewer(output_dir=output_dir)
 
     html_path = Path(outputs["viewer_html_path"])
+    decision_trace_html_path = Path(outputs["decision_trace_viewer_html_path"])
     echarts_path = Path(outputs["echarts_path"])
     hyparquet_root = Path(outputs["hyparquet_root"])
     hyparquet_bundle_path = Path(outputs["hyparquet_bundle_path"])
     assert html_path.exists()
+    assert decision_trace_html_path.exists()
     assert echarts_path.exists()
     assert hyparquet_root.exists()
     assert (hyparquet_root / "index.js").exists()
@@ -58,9 +60,11 @@ def test_offline_report_viewer_script_init(tmp_path) -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert (output_dir / "offline_report_viewer.html").exists()
+    assert (output_dir / "decision_trace_viewer.html").exists()
     assert (output_dir / "echarts.min.js").exists()
     assert (output_dir / "vendor" / "hyparquet" / "index.js").exists()
     assert (output_dir / "vendor" / "hyparquet.bundle.js").exists()
     assert "viewer_html_path:" in completed.stdout
+    assert "decision_trace_viewer_html_path:" in completed.stdout
     assert "hyparquet_root:" in completed.stdout
     assert "hyparquet_bundle_path:" in completed.stdout

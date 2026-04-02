@@ -9,6 +9,7 @@ from pathlib import Path
 
 _ASSET_ROOT = Path(__file__).resolve().parent / "assets"
 _VIEWER_TEMPLATE_NAME = "offline_report_viewer.html"
+_DECISION_TRACE_VIEWER_TEMPLATE_NAME = "decision_trace_viewer.html"
 _ECHARTS_NAME = "echarts.min.js"
 _VENDOR_HYPARQUET_DIR = "vendor/hyparquet"
 _VENDOR_HYPARQUET_BUNDLE_NAME = "vendor/hyparquet.bundle.js"
@@ -203,14 +204,17 @@ def initialize_offline_report_viewer(
     output_root.mkdir(parents=True, exist_ok=True)
 
     viewer_source = _resolve_asset(_VIEWER_TEMPLATE_NAME)
+    decision_trace_viewer_source = _resolve_asset(_DECISION_TRACE_VIEWER_TEMPLATE_NAME)
     echarts_source = _resolve_asset(_ECHARTS_NAME)
     hyparquet_source = _resolve_asset(_VENDOR_HYPARQUET_DIR)
     hyparquet_bundle_target = output_root / _VENDOR_HYPARQUET_BUNDLE_NAME
     viewer_target = output_root / html_name
+    decision_trace_viewer_target = output_root / _DECISION_TRACE_VIEWER_TEMPLATE_NAME
     echarts_target = output_root / _ECHARTS_NAME
     hyparquet_target_root = output_root / "vendor" / "hyparquet"
 
     _copy_asset(source=viewer_source, target=viewer_target, overwrite=overwrite)
+    _copy_asset(source=decision_trace_viewer_source, target=decision_trace_viewer_target, overwrite=overwrite)
     _copy_asset(source=echarts_source, target=echarts_target, overwrite=overwrite)
     if hyparquet_target_root.exists() and overwrite:
         shutil.rmtree(hyparquet_target_root)
@@ -226,6 +230,7 @@ def initialize_offline_report_viewer(
     return {
         "viewer_root": str(output_root),
         "viewer_html_path": str(viewer_target),
+        "decision_trace_viewer_html_path": str(decision_trace_viewer_target),
         "echarts_path": str(echarts_target),
         "hyparquet_root": str(hyparquet_target_root),
         "hyparquet_bundle_path": str(hyparquet_bundle_target),

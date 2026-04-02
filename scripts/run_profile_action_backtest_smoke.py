@@ -178,6 +178,7 @@ def main() -> int:
         strategy_name="Profile Action",
         config=backtest_config,
         result=backtest_result,
+        decision_trace=strategy_result.decision_trace,
         report_base=Path(args.report_base),
         run_id=str(args.run_id).strip() or None,
         run_suffix=str(args.run_suffix),
@@ -206,6 +207,7 @@ def main() -> int:
             "trades_path": outputs.get("trades_parquet_path"),
             "equity_curve_path": outputs.get("equity_curve_parquet_path"),
             "signal_execution_path": outputs.get("signal_execution_path"),
+            "decision_trace_path": outputs.get("decision_trace_path"),
             "run_manifest_path": outputs.get("run_manifest_path"),
         },
     }

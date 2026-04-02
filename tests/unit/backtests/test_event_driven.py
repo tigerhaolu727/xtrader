@@ -391,6 +391,7 @@ def test_event_driven_report_smoke_writes_artifacts(tmp_path) -> None:
     trades_parquet_path = report_root / "ledgers" / "trades.parquet"
     equity_parquet_path = report_root / "curves" / "equity_curve.parquet"
     signal_execution_path = report_root / "timelines" / "signal_execution.parquet"
+    decision_trace_path = report_root / "timelines" / "decision_trace.parquet"
     snapshot_root = report_root / "snapshots"
     price_snapshot_path = snapshot_root / "base" / "price_5m.parquet"
     action_snapshot_path = snapshot_root / "action_input.parquet"
@@ -404,6 +405,7 @@ def test_event_driven_report_smoke_writes_artifacts(tmp_path) -> None:
     assert trades_parquet_path.exists()
     assert equity_parquet_path.exists()
     assert signal_execution_path.exists()
+    assert decision_trace_path.exists()
     assert price_snapshot_path.exists()
     assert action_snapshot_path.exists()
     assert snapshot_manifest_path.exists()
@@ -425,6 +427,7 @@ def test_event_driven_report_smoke_writes_artifacts(tmp_path) -> None:
     assert outputs["run_manifest_path"].endswith("run_manifest.json")
     assert outputs["diagnostics_path"].endswith("diagnostics.json")
     assert outputs["signal_execution_path"].endswith("timelines/signal_execution.parquet")
+    assert outputs["decision_trace_path"].endswith("timelines/decision_trace.parquet")
     assert outputs["price_snapshot_path"].endswith("snapshots/base/price_5m.parquet")
     assert outputs["action_snapshot_path"].endswith("snapshots/action_input.parquet")
     assert outputs["snapshot_manifest_path"].endswith("snapshots/snapshot_manifest.json")
@@ -450,10 +453,13 @@ def test_event_driven_report_smoke_writes_artifacts(tmp_path) -> None:
     assert f"ledgers/{event_driven_module._TRADES_PARQUET_FILENAME}" in artifact_paths
     assert f"curves/{event_driven_module._EQUITY_PARQUET_FILENAME}" in artifact_paths
     assert f"timelines/{event_driven_module._SIGNAL_EXECUTION_FILENAME}" in artifact_paths
+    assert f"timelines/{event_driven_module._DECISION_TRACE_FILENAME}" in artifact_paths
     assert all(not path.endswith(".csv") for path in artifact_paths if path)
     prices_chunk_manifest = json.loads(Path(outputs["price_chunks_manifest_path"]).read_text(encoding="utf-8"))
     if prices_chunk_manifest["chunks"]:
         assert prices_chunk_manifest["chunks"][0]["file"].endswith(".parquet")
+    decision_chunk_manifest = json.loads(Path(outputs["decision_trace_chunks_manifest_path"]).read_text(encoding="utf-8"))
+    assert decision_chunk_manifest["dataset"] == "decision_trace"
     resampled_manifest_payload = json.loads(resampled_manifest_path.read_text(encoding="utf-8"))
     frames = resampled_manifest_payload["frames"]
     assert len(frames) == 2
@@ -715,7 +721,8 @@ def test_profile_action_strategy_backtest_smoke_writes_baseline_artifacts(tmp_pa
         inputs={"5m": bars},
         meta={"account_context": {"equity": 10_000.0, "open_positions": 0, "daily_pnl_pct": 0.0}},
     )
-    actions = strategy.generate_actions(context).actions
+    strategy_result = strategy.generate_actions(context)
+    actions = strategy_result.actions
     result = run_event_driven_backtest(
         actions=actions,
         price_frame=bars,
@@ -734,6 +741,7 @@ def test_profile_action_strategy_backtest_smoke_writes_baseline_artifacts(tmp_pa
         run_id="20260402T000000Z_profile_action_smoke",
         config=EventDrivenBacktestConfig(symbol="BTCUSDT", interval_ms=300_000),
         result=result,
+        decision_trace=strategy_result.decision_trace,
         price_frame=bars,
         actions=actions,
         signal_interval_ms=300_000,
@@ -745,6 +753,7 @@ def test_profile_action_strategy_backtest_smoke_writes_baseline_artifacts(tmp_pa
     assert (report_root / "ledgers" / "trades.parquet").exists()
     assert (report_root / "curves" / "equity_curve.parquet").exists()
     assert (report_root / "timelines" / "signal_execution.parquet").exists()
+    assert (report_root / "timelines" / "decision_trace.parquet").exists()
     assert (report_root / "run_manifest.json").exists()
 
     summary = json.loads((report_root / "summary.json").read_text(encoding="utf-8"))

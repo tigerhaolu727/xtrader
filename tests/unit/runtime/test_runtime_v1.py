@@ -353,6 +353,7 @@ def test_runtime_core_run_backtest_single_trial_success(tmp_path) -> None:
     assert (run_root / "summary.json").exists()
     assert (run_root / "artifacts" / "summary.parquet").exists()
     assert (run_root / "artifacts" / "signals.parquet").exists()
+    assert (run_root / "artifacts" / "decision_trace.parquet").exists()
     assert (run_root / "artifacts" / "trades.parquet").exists()
     assert (run_root / "artifacts" / "equity.parquet").exists()
     assert (run_root / "data_snapshot" / "raw" / "5m.parquet").exists()
@@ -366,6 +367,7 @@ def test_runtime_core_run_backtest_single_trial_success(tmp_path) -> None:
     assert "config_refs" in manifest
     assert manifest["artifact_refs"]["summary"] == "artifacts/summary.parquet"
     assert manifest["artifact_refs"]["signals"] == "artifacts/signals.parquet"
+    assert manifest["artifact_refs"]["decision_trace"] == "artifacts/decision_trace.parquet"
     assert manifest["data_snapshot_refs"]["raw"]["5m"] == "data_snapshot/raw/5m.parquet"
     assert manifest["viewer_contract"]["status"] == "READY"
     assert manifest["viewer_contract"]["missing_required_files"] == []

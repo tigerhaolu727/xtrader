@@ -216,6 +216,7 @@ class RuntimeCore:
                 report_root=run_root,
                 config=primary_trial_outputs["backtest_config"],
                 result=primary_trial_outputs["output_result"],
+                decision_trace=primary_trial_outputs.get("decision_trace"),
                 resampled_price_frames=primary_trial_outputs["resampled_frames"],
                 strategy_name=str(primary_loaded.resolved["strategy_id"]),
             )
@@ -422,6 +423,11 @@ class RuntimeCore:
         signals_parquet_path = artifacts_root / "signals.parquet"
         signals_frame.to_parquet(signals_parquet_path, index=False)
 
+        decision_trace_source_path = Path(str(backtest_outputs["decision_trace_path"]))
+        decision_trace_frame = pd.read_parquet(decision_trace_source_path)
+        decision_trace_parquet_path = artifacts_root / "decision_trace.parquet"
+        decision_trace_frame.to_parquet(decision_trace_parquet_path, index=False)
+
         trades_source_path = Path(str(backtest_outputs["trades_parquet_path"]))
         trades_frame = pd.read_parquet(trades_source_path)
         trades_parquet_path = artifacts_root / "trades.parquet"
@@ -521,6 +527,7 @@ class RuntimeCore:
             "run_manifest.json",
             "artifacts/summary.parquet",
             "artifacts/signals.parquet",
+            "artifacts/decision_trace.parquet",
             "artifacts/trades.parquet",
             "artifacts/equity.parquet",
             "data_snapshot/dataset_index.json",
@@ -550,6 +557,7 @@ class RuntimeCore:
             "artifact_refs": {
                 "summary": str(summary_parquet_path.relative_to(run_root).as_posix()),
                 "signals": str(signals_parquet_path.relative_to(run_root).as_posix()),
+                "decision_trace": str(decision_trace_parquet_path.relative_to(run_root).as_posix()),
                 "trades": str(trades_parquet_path.relative_to(run_root).as_posix()),
                 "equity": str(equity_parquet_path.relative_to(run_root).as_posix()),
             },
@@ -729,6 +737,7 @@ class RuntimeCore:
             "backtest_config": backtest_config,
             "resampled_frames": resampled_frames,
             "output_result": output_result,
+            "decision_trace": action_result.decision_trace.copy(deep=True),
         }
 
     def _derive_run_outcome(

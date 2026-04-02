@@ -127,6 +127,7 @@ class ActionStrategyResult:
     strategy_version: str
     actions: pd.DataFrame
     diagnostics: dict[str, Any] = field(default_factory=dict)
+    decision_trace: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def validate_schema(self, expected_schema: tuple[str, ...] | None = None) -> None:
         required = expected_schema or DEFAULT_ACTION_OUTPUT_SCHEMA

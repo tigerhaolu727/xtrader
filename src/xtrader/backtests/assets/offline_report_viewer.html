@@ -64,6 +64,12 @@
     .controls button {
       cursor: pointer;
     }
+    .controls .link-btn {
+      text-decoration: none;
+      color: #0f172a;
+      display: inline-flex;
+      align-items: center;
+    }
     .status {
       color: var(--muted);
       font-size: 12px;
@@ -124,6 +130,11 @@
       font-size: 13px;
       padding: 8px 0;
     }
+    .detail-item {
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 4px;
+    }
     .panel-head {
       display: flex;
       align-items: center;
@@ -151,6 +162,130 @@
       margin-top: 8px;
       font-size: 12px;
       color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .ledger-tools {
+      margin-bottom: 8px;
+    }
+    .ledger-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+      align-items: end;
+      margin-bottom: 8px;
+    }
+    .ledger-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .ledger-field label {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+    .ledger-field input,
+    .ledger-field select {
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+    .ledger-field.small {
+      max-width: 120px;
+    }
+    .ledger-actions {
+      display: flex;
+      gap: 8px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+    .ledger-actions button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .ledger-jump {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+    }
+    .ledger-jump input {
+      width: 86px;
+      box-sizing: border-box;
+    }
+    .ledger-count {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .ledger-locate-info {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+      min-height: 18px;
+    }
+    .ledger-locate-info.warn {
+      color: #b45309;
+    }
+    .ledger-locate-info.err {
+      color: #b91c1c;
+    }
+    .ledger-locate-info.ok {
+      color: #0f766e;
+    }
+    .trace-open-btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--ink);
+    }
+    .modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.45);
+      z-index: 999;
+    }
+    .modal.show {
+      display: flex;
+    }
+    .modal-card {
+      width: min(980px, calc(100vw - 32px));
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 16px 48px rgba(15, 23, 42, 0.22);
+    }
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .modal-head h2 {
+      margin: 0;
+    }
+    .modal-close {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -171,6 +306,7 @@
           <option value="0">ALL</option>
         </select>
         <button id="reloadBtn" type="button">重新加载</button>
+        <a id="decisionTraceViewerLink" class="link-btn" href="./decision_trace_viewer.html" target="_blank" rel="noopener noreferrer">打开决策回溯查询页</a>
       </div>
       <div id="status" class="status">等待选择 Run 目录。</div>
     </div>
@@ -206,6 +342,72 @@
 
     <div class="panel">
       <h2>交易记录（Trade Ledger）</h2>
+      <div class="ledger-grid ledger-tools">
+        <div class="ledger-field">
+          <label for="ledgerSearch">关键词</label>
+          <input id="ledgerSearch" type="text" placeholder="时间/方向关键词" />
+        </div>
+        <div class="ledger-field">
+          <label for="ledgerSideFilter">方向</label>
+          <select id="ledgerSideFilter">
+            <option value="all" selected>全部</option>
+            <option value="long">LONG</option>
+            <option value="short">SHORT</option>
+          </select>
+        </div>
+        <div class="ledger-field">
+          <label for="ledgerPnlFilter">PnL</label>
+          <select id="ledgerPnlFilter">
+            <option value="all" selected>全部</option>
+            <option value="profit">盈利</option>
+            <option value="loss">亏损</option>
+          </select>
+        </div>
+        <div class="ledger-field small">
+          <label for="ledgerPnlMin">最小PnL</label>
+          <input id="ledgerPnlMin" type="number" step="0.0001" placeholder="min" />
+        </div>
+        <div class="ledger-field small">
+          <label for="ledgerPnlMax">最大PnL</label>
+          <input id="ledgerPnlMax" type="number" step="0.0001" placeholder="max" />
+        </div>
+        <div class="ledger-field">
+          <label for="ledgerStartTime">起始时间</label>
+          <input id="ledgerStartTime" type="datetime-local" step="60" />
+        </div>
+        <div class="ledger-field">
+          <label for="ledgerEndTime">结束时间</label>
+          <input id="ledgerEndTime" type="datetime-local" step="60" />
+        </div>
+        <div class="ledger-field">
+          <label for="ledgerSort">排序</label>
+          <select id="ledgerSort">
+            <option value="entry_desc" selected>开仓时间 新->旧</option>
+            <option value="entry_asc">开仓时间 旧->新</option>
+            <option value="pnl_desc">净收益 高->低</option>
+            <option value="pnl_asc">净收益 低->高</option>
+          </select>
+        </div>
+      </div>
+      <div class="ledger-actions ledger-tools">
+        <button id="ledgerApply" type="button">应用筛选</button>
+        <button id="ledgerClear" type="button">清空筛选</button>
+      </div>
+      <div class="ledger-grid ledger-tools">
+        <div class="ledger-field">
+          <label for="ledgerLocateTime">时间定位（本地时间）</label>
+          <input id="ledgerLocateTime" type="datetime-local" step="60" />
+        </div>
+        <div class="ledger-field small">
+          <label for="ledgerLocateTolerance">最大偏差(分钟)</label>
+          <input id="ledgerLocateTolerance" type="number" min="0" step="1" value="0" />
+        </div>
+        <div class="ledger-actions">
+          <button id="ledgerLocate" type="button">定位</button>
+        </div>
+        <span id="ledgerCountInfo" class="ledger-count">命中 0 / 0</span>
+      </div>
+      <div id="ledgerLocateInfo" class="ledger-locate-info">定位提示：请选择时间后点击“定位”。</div>
       <div id="ledgerEmpty" class="empty" style="display:none">暂无交易记录。</div>
       <div class="table-wrap">
         <table>
@@ -225,10 +427,25 @@
         </table>
       </div>
       <div class="pager">
+        <div class="ledger-jump">
+          <label for="ledgerJumpPage">跳页</label>
+          <input id="ledgerJumpPage" type="number" min="1" step="1" placeholder="页码" />
+          <button id="ledgerJumpBtn" type="button">跳转</button>
+        </div>
         <button id="ledgerPrev" type="button">上一页</button>
         <span id="ledgerInfo">0 / 0</span>
         <button id="ledgerNext" type="button">下一页</button>
       </div>
+    </div>
+  </div>
+  <div id="decisionTraceModal" class="modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="decisionTraceModalTitle">
+      <div class="modal-head">
+        <h2 id="decisionTraceModalTitle">交易决策链（Trade Decision Trace）</h2>
+        <button id="decisionTraceModalClose" class="modal-close" type="button">关闭</button>
+      </div>
+      <div id="decisionTraceHint" class="empty">点击交易记录后，这里将展示对应进/出场决策链匹配结果。</div>
+      <div id="decisionTraceSummary"></div>
     </div>
   </div>
   <script>
@@ -243,8 +460,29 @@
       const ledgerBody = document.getElementById("ledgerBody");
       const ledgerEmpty = document.getElementById("ledgerEmpty");
       const ledgerInfo = document.getElementById("ledgerInfo");
+      const ledgerCountInfo = document.getElementById("ledgerCountInfo");
       const ledgerPrev = document.getElementById("ledgerPrev");
       const ledgerNext = document.getElementById("ledgerNext");
+      const ledgerSearch = document.getElementById("ledgerSearch");
+      const ledgerSideFilter = document.getElementById("ledgerSideFilter");
+      const ledgerPnlFilter = document.getElementById("ledgerPnlFilter");
+      const ledgerPnlMin = document.getElementById("ledgerPnlMin");
+      const ledgerPnlMax = document.getElementById("ledgerPnlMax");
+      const ledgerStartTime = document.getElementById("ledgerStartTime");
+      const ledgerEndTime = document.getElementById("ledgerEndTime");
+      const ledgerSort = document.getElementById("ledgerSort");
+      const ledgerApply = document.getElementById("ledgerApply");
+      const ledgerClear = document.getElementById("ledgerClear");
+      const ledgerLocateTime = document.getElementById("ledgerLocateTime");
+      const ledgerLocateTolerance = document.getElementById("ledgerLocateTolerance");
+      const ledgerLocate = document.getElementById("ledgerLocate");
+      const ledgerLocateInfo = document.getElementById("ledgerLocateInfo");
+      const ledgerJumpPage = document.getElementById("ledgerJumpPage");
+      const ledgerJumpBtn = document.getElementById("ledgerJumpBtn");
+      const decisionTraceModal = document.getElementById("decisionTraceModal");
+      const decisionTraceModalClose = document.getElementById("decisionTraceModalClose");
+      const decisionTraceHint = document.getElementById("decisionTraceHint");
+      const decisionTraceSummary = document.getElementById("decisionTraceSummary");
       const state = {
         files: new Map(),
         runRootPrefix: "",
@@ -257,23 +495,27 @@
           trades: new Map(),
           equity: new Map(),
           signal_execution: new Map(),
+          decision_trace: new Map(),
         },
         fullParquetPaths: {
           prices: null,
           trades: null,
           equity: null,
           signal_execution: null,
+          decision_trace: null,
         },
         fullParquetCache: {
           prices: null,
           trades: null,
           equity: null,
           signal_execution: null,
+          decision_trace: null,
         },
         bounds: { min: null, max: null },
         trades: [],
         equity: [],
         timeline: [],
+        decisionTrace: [],
         prices: [],
         ledgerPage: 1,
         ledgerPageSize: 200,
@@ -285,12 +527,21 @@
         timelineMode: "global",
         focusedTrade: null,
         focusedTradeKey: "",
+        tradeDecisionContext: null,
+        decisionModalOpen: false,
         klineRenderRows: [],
         klineDomain: { min: null, max: null },
       };
 
       const setStatus = (text) => {
         statusEl.textContent = text;
+      };
+
+      const setLocateInfo = (text, level) => {
+        if (!ledgerLocateInfo) return;
+        ledgerLocateInfo.textContent = text;
+        const cls = level ? String(level) : "";
+        ledgerLocateInfo.className = "ledger-locate-info" + (cls ? (" " + cls) : "");
       };
 
       const normPath = (value) => String(value || "").replace(/^\.?\//, "").replace(/\\/g, "/");
@@ -401,6 +652,7 @@
       };
 
       const parseTradeRow = (row) => ({
+        symbol: String(row.symbol || ""),
         side: String(row.side || ""),
         entryTime: String(row.entry_time || ""),
         exitTime: String(row.exit_time || ""),
@@ -423,6 +675,29 @@
         action: String(row.action || ""),
         reason: String(row.reason || ""),
         lagMs: toNum(row.lag_ms),
+      });
+
+      const parseDecisionTraceRow = (row) => ({
+        runId: String(row.run_id || ""),
+        symbol: String(row.symbol || "").toUpperCase(),
+        signalTime: String(row.signal_time || ""),
+        executionTime: String(row.execution_time || ""),
+        signalTs: parseUtcMs(row.signal_time),
+        executionTs: parseUtcMs(row.execution_time),
+        action: String(row.action || "").toUpperCase(),
+        actionRaw: String(row.action_raw || "").toUpperCase(),
+        reason: String(row.reason || ""),
+        state: String(row.state || ""),
+        scoreTotal: toNum(row.score_total),
+        featureValuesJson: row.feature_values_json,
+        requiredFeatureRefsJson: row.required_feature_refs_json,
+        requiredFeatureValuesJson: row.required_feature_values_json,
+        ruleResultsJson: row.rule_results_json,
+        groupScoresJson: row.group_scores_json,
+        groupWeightsJson: row.group_weights_json,
+        signalDecisionJson: row.signal_decision_json,
+        riskDecisionJson: row.risk_decision_json,
+        actionResultJson: row.action_result_json,
       });
 
       const DATASET_CONFIG = {
@@ -457,6 +732,14 @@
           chunkSetKey: "signal_execution",
           timeRange: (row) => ({ start: row.signalTs, end: row.signalTs }),
           fallbackMatchers: [(p) => p.endsWith("timelines/signal_execution.parquet")],
+        },
+        decision_trace: {
+          parser: parseDecisionTraceRow,
+          sortKey: (row) => row.executionTs,
+          valid: (row) => Number.isFinite(row.executionTs),
+          chunkSetKey: "decision_trace",
+          timeRange: (row) => ({ start: row.executionTs, end: row.executionTs }),
+          fallbackMatchers: [(p) => p.endsWith("timelines/decision_trace.parquet")],
         },
       };
 
@@ -649,19 +932,22 @@
           state.trades = [];
           state.equity = [];
           state.timeline = [];
+          state.decisionTrace = [];
           return;
         }
-        const [prices, trades, equity, timeline] = await Promise.all([
+        const [prices, trades, equity, timeline, decisionTrace] = await Promise.all([
           loadDatasetRows("prices", windowRange.start, windowRange.end),
           loadDatasetRows("trades", windowRange.start, windowRange.end),
           loadDatasetRows("equity", windowRange.start, windowRange.end),
           loadDatasetRows("signal_execution", windowRange.start, windowRange.end),
+          loadDatasetRows("decision_trace", windowRange.start, windowRange.end),
         ]);
         if (state.loadingVersion !== token) return;
         state.prices = prices;
         state.trades = trades;
         state.equity = equity;
         state.timeline = timeline;
+        state.decisionTrace = decisionTrace;
       };
 
       const renderSummary = () => {
@@ -685,6 +971,163 @@
         return entry + "|" + exit + "|" + String(row && row.side || "");
       };
 
+      const _formatUtc = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : "NA");
+
+      const _effectiveTradeSymbol = (row) => {
+        const fromRow = String(row && row.symbol || "").toUpperCase();
+        if (fromRow) return fromRow;
+        const fromManifest = String(state.manifest && state.manifest.symbol || "").toUpperCase();
+        return fromManifest;
+      };
+
+      const _buildDecisionViewerHref = (symbol, executionMs, action) => {
+        const params = new URLSearchParams();
+        if (symbol) params.set("symbol", symbol);
+        if (Number.isFinite(executionMs)) params.set("execution_time", new Date(executionMs).toISOString());
+        if (action) params.set("action", action);
+        return "./decision_trace_viewer.html?" + params.toString();
+      };
+
+      const _setDecisionModalOpen = (open) => {
+        state.decisionModalOpen = !!open;
+        if (decisionTraceModal) {
+          if (state.decisionModalOpen) {
+            decisionTraceModal.classList.add("show");
+            decisionTraceModal.setAttribute("aria-hidden", "false");
+          } else {
+            decisionTraceModal.classList.remove("show");
+            decisionTraceModal.setAttribute("aria-hidden", "true");
+          }
+        }
+      };
+
+      const _openDecisionTraceViewerWithHandoff = ({ symbol, executionMs, action, matches }) => {
+        const href = _buildDecisionViewerHref(symbol, executionMs, action);
+        const popup = window.open(href, "_blank");
+        if (!popup) {
+          setStatus("浏览器拦截了新窗口，请允许弹窗后重试。");
+          return;
+        }
+        const safeRows = Array.isArray(matches) ? matches.slice(0, 300) : [];
+        const payload = {
+          type: "xtrader_decision_trace_handoff_v1",
+          source: "offline_report_viewer",
+          query: {
+            symbol: String(symbol || ""),
+            execution_time: Number.isFinite(executionMs) ? new Date(executionMs).toISOString() : "",
+            action: String(action || ""),
+          },
+          runMeta: {
+            run_id: String(state.manifest && state.manifest.run_id || ""),
+            symbol: String(state.manifest && state.manifest.symbol || ""),
+          },
+          rows: safeRows,
+        };
+        let attempts = 0;
+        const send = () => {
+          attempts += 1;
+          try {
+            popup.postMessage(payload, "*");
+          } catch (_err) {
+            return true;
+          }
+          return attempts >= 20 || popup.closed;
+        };
+        if (send()) return;
+        const timer = window.setInterval(() => {
+          if (send()) window.clearInterval(timer);
+        }, 250);
+      };
+
+      const _findDecisionMatches = (executionMs, action, symbol) => {
+        if (!Number.isFinite(executionMs)) return [];
+        const wantedAction = String(action || "").toUpperCase();
+        const wantedSymbol = String(symbol || "").toUpperCase();
+        return (state.decisionTrace || []).filter((row) => {
+          if (!Number.isFinite(row.executionTs) || row.executionTs !== executionMs) return false;
+          if (wantedSymbol && String(row.symbol || "").toUpperCase() !== wantedSymbol) return false;
+          if (wantedAction && String(row.action || "").toUpperCase() !== wantedAction) return false;
+          return true;
+        });
+      };
+
+      const renderTradeDecisionContext = () => {
+        const context = state.tradeDecisionContext;
+        if (!context || !context.trade) {
+          decisionTraceHint.style.display = "";
+          decisionTraceSummary.innerHTML = "";
+          _setDecisionModalOpen(false);
+          return;
+        }
+        decisionTraceHint.style.display = "none";
+        _setDecisionModalOpen(true);
+        const trade = context.trade;
+        const phases = [
+          { label: "进场", action: "ENTER", key: "entry", timeMs: trade.entryMs, timeText: trade.entryTime },
+          { label: "出场", action: "EXIT", key: "exit", timeMs: trade.exitMs, timeText: trade.exitTime },
+        ];
+        const blocks = phases.map((phase) => {
+          const matches = Array.isArray(context[phase.key]) ? context[phase.key] : [];
+          if (!Number.isFinite(phase.timeMs)) {
+            return (
+              "<div class='card'>"
+              + "<div class='k'>" + phase.label + "（" + phase.action + "）</div>"
+              + "<div class='empty'>该交易缺少可匹配时间。</div>"
+              + "</div>"
+            );
+          }
+          if (!matches.length) {
+            return (
+              "<div class='card'>"
+              + "<div class='k'>" + phase.label + "（" + phase.action + "）</div>"
+              + "<div class='empty'>未命中 decision_trace，查询键："
+              + String(context.symbol || "NA") + " + " + _formatUtc(phase.timeMs) + " + " + phase.action
+              + "</div>"
+              + "<div><button class='trace-open-btn' type='button' data-phase-key='" + phase.key + "' data-execution-ms='" + phase.timeMs + "' data-action='" + phase.action + "'>在独立页面定位</button></div>"
+              + "</div>"
+            );
+          }
+          const first = matches[0];
+          const score = Number.isFinite(first.scoreTotal) ? first.scoreTotal.toFixed(6) : "NA";
+          const matchNote = matches.length > 1 ? ("<div class='status'>命中 " + matches.length + " 条，请在独立页面精确筛选。</div>") : "";
+          return (
+            "<div class='card'>"
+            + "<div class='k'>" + phase.label + "（" + phase.action + "）</div>"
+            + "<div class='detail-item'><strong>execution_time:</strong> " + String(phase.timeText || _formatUtc(phase.timeMs)) + "</div>"
+            + "<div class='detail-item'><strong>state:</strong> " + String(first.state || "NA") + "</div>"
+            + "<div class='detail-item'><strong>score_total:</strong> " + score + "</div>"
+            + "<div class='detail-item'><strong>reason:</strong> " + String(first.reason || "NA") + "</div>"
+            + matchNote
+            + "<div><button class='trace-open-btn' type='button' data-phase-key='" + phase.key + "' data-execution-ms='" + phase.timeMs + "' data-action='" + phase.action + "'>在独立页面查看完整决策链</button></div>"
+            + "</div>"
+          );
+        });
+        decisionTraceSummary.innerHTML = (
+          "<div class='status'>交易定位键：symbol="
+          + String(context.symbol || "NA")
+          + " | entry="
+          + _formatUtc(trade.entryMs)
+          + " | exit="
+          + _formatUtc(trade.exitMs)
+          + "</div>"
+          + "<div class='grid'>" + blocks.join("") + "</div>"
+        );
+        decisionTraceSummary.querySelectorAll(".trace-open-btn[data-phase-key]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const phaseKey = String(button.getAttribute("data-phase-key") || "");
+            const executionMs = toNum(button.getAttribute("data-execution-ms"));
+            const action = String(button.getAttribute("data-action") || "").toUpperCase();
+            const phaseMatches = Array.isArray(context[phaseKey]) ? context[phaseKey] : [];
+            _openDecisionTraceViewerWithHandoff({
+              symbol: context.symbol,
+              executionMs,
+              action,
+              matches: phaseMatches,
+            });
+          });
+        });
+      };
+
       const setTimelineMode = (mode) => {
         const next = mode === "trade" ? "trade" : "global";
         state.timelineMode = next;
@@ -692,15 +1135,148 @@
         if (timelineResetBtn) timelineResetBtn.disabled = next !== "trade";
       };
 
+      const _ledgerCriteria = () => ({
+        keyword: String((ledgerSearch && ledgerSearch.value) || "").trim().toLowerCase(),
+        side: String((ledgerSideFilter && ledgerSideFilter.value) || "all").toLowerCase(),
+        pnlFilter: String((ledgerPnlFilter && ledgerPnlFilter.value) || "all").toLowerCase(),
+        pnlMin: toNum(ledgerPnlMin && ledgerPnlMin.value),
+        pnlMax: toNum(ledgerPnlMax && ledgerPnlMax.value),
+        startMs: parseUtcMs(ledgerStartTime && ledgerStartTime.value),
+        endMs: parseUtcMs(ledgerEndTime && ledgerEndTime.value),
+        sort: String((ledgerSort && ledgerSort.value) || "entry_desc"),
+      });
+
+      const _tradeSideTag = (row) => {
+        const side = String(row && row.side || "").toUpperCase();
+        if (side.includes("LONG")) return "long";
+        if (side.includes("SHORT")) return "short";
+        return "other";
+      };
+
+      const _filterAndSortLedgerRows = (rows) => {
+        const criteria = _ledgerCriteria();
+        let next = Array.isArray(rows) ? rows.slice() : [];
+
+        if (criteria.side === "long" || criteria.side === "short") {
+          next = next.filter((row) => _tradeSideTag(row) === criteria.side);
+        }
+        if (criteria.pnlFilter === "profit") {
+          next = next.filter((row) => Number.isFinite(row.netPnl) && row.netPnl > 0);
+        } else if (criteria.pnlFilter === "loss") {
+          next = next.filter((row) => Number.isFinite(row.netPnl) && row.netPnl < 0);
+        }
+        if (Number.isFinite(criteria.pnlMin)) {
+          next = next.filter((row) => Number.isFinite(row.netPnl) && row.netPnl >= criteria.pnlMin);
+        }
+        if (Number.isFinite(criteria.pnlMax)) {
+          next = next.filter((row) => Number.isFinite(row.netPnl) && row.netPnl <= criteria.pnlMax);
+        }
+        if (Number.isFinite(criteria.startMs)) {
+          next = next.filter((row) => Number.isFinite(row.entryMs) && row.entryMs >= criteria.startMs);
+        }
+        if (Number.isFinite(criteria.endMs)) {
+          next = next.filter((row) => Number.isFinite(row.entryMs) && row.entryMs <= criteria.endMs);
+        }
+        if (criteria.keyword) {
+          next = next.filter((row) => {
+            const text = (
+              String(row.side || "") + " "
+              + String(row.entryTime || "") + " "
+              + String(row.exitTime || "")
+            ).toLowerCase();
+            return text.includes(criteria.keyword);
+          });
+        }
+
+        if (criteria.sort === "entry_asc") {
+          next.sort((a, b) => (a.entryMs || 0) - (b.entryMs || 0));
+        } else if (criteria.sort === "pnl_desc") {
+          next.sort((a, b) => {
+            const lhs = Number.isFinite(a.netPnl) ? a.netPnl : Number.NEGATIVE_INFINITY;
+            const rhs = Number.isFinite(b.netPnl) ? b.netPnl : Number.NEGATIVE_INFINITY;
+            return rhs - lhs;
+          });
+        } else if (criteria.sort === "pnl_asc") {
+          next.sort((a, b) => {
+            const lhs = Number.isFinite(a.netPnl) ? a.netPnl : Number.POSITIVE_INFINITY;
+            const rhs = Number.isFinite(b.netPnl) ? b.netPnl : Number.POSITIVE_INFINITY;
+            return lhs - rhs;
+          });
+        } else {
+          next.sort((a, b) => (b.entryMs || 0) - (a.entryMs || 0));
+        }
+        return next;
+      };
+
+      const _currentLedgerRows = () => {
+        const baseRows = withinWindow(state.trades, (r) => r.entryMs);
+        const rows = _filterAndSortLedgerRows(baseRows);
+        return { baseRows, rows };
+      };
+
+      const _focusTrade = (row) => {
+        if (!row) return;
+        state.focusedTrade = row;
+        state.focusedTradeKey = tradeKey(row);
+        const symbol = _effectiveTradeSymbol(row);
+        state.tradeDecisionContext = {
+          trade: row,
+          symbol,
+          entry: _findDecisionMatches(row.entryMs, "ENTER", symbol),
+          exit: _findDecisionMatches(row.exitMs, "EXIT", symbol),
+        };
+        setTimelineMode("trade");
+        renderTimelineChart();
+        renderLedger();
+        renderTradeDecisionContext();
+
+        if (Number.isFinite(row.entryMs)) {
+          const entry = row.entryMs;
+          const exit = Number.isFinite(row.exitMs) ? row.exitMs : row.entryMs;
+          const left = entry - 6 * 3600 * 1000;
+          const right = Number.isFinite(exit) ? (exit + 6 * 3600 * 1000) : (entry + 6 * 3600 * 1000);
+          if (state.klineChart) {
+            state.klineChart.dispatchAction({ type: "dataZoom", startValue: left, endValue: right });
+          }
+          if (state.equityChart) {
+            state.equityChart.dispatchAction({ type: "dataZoom", startValue: left, endValue: right });
+          }
+          if (state.timelineChart) {
+            state.timelineChart.dispatchAction({ type: "dataZoom", startValue: left, endValue: right });
+          }
+        }
+        setStatus(
+          "已聚焦交易 | 开仓=" + row.entryTime
+          + " | 平仓=" + row.exitTime
+          + " | 方向=" + row.side
+          + " | 决策链(进/出)=" + String((state.tradeDecisionContext.entry || []).length) + "/" + String((state.tradeDecisionContext.exit || []).length)
+        );
+      };
+
       const renderLedger = () => {
-        const rows = withinWindow(state.trades, (r) => r.entryMs);
+        const { baseRows, rows } = _currentLedgerRows();
+        if (ledgerCountInfo) {
+          ledgerCountInfo.textContent = "命中 " + rows.length + " / " + baseRows.length;
+        }
+        let timelineNeedsRefresh = false;
+        if (state.focusedTrade && !rows.some((r) => tradeKey(r) === state.focusedTradeKey)) {
+          state.focusedTrade = null;
+          state.focusedTradeKey = "";
+          state.tradeDecisionContext = null;
+          setTimelineMode("global");
+          timelineNeedsRefresh = true;
+        }
         if (!rows.length) {
           ledgerEmpty.style.display = "";
           ledgerBody.innerHTML = "";
           ledgerInfo.textContent = "0 / 0";
-          state.focusedTrade = null;
-          state.focusedTradeKey = "";
-          setTimelineMode("global");
+          if (!baseRows.length) {
+            ledgerEmpty.textContent = "暂无交易记录。";
+          } else {
+            ledgerEmpty.textContent = "当前筛选条件下无结果。";
+          }
+          renderTradeDecisionContext();
+          if (timelineNeedsRefresh && state.timelineChart) renderTimelineChart();
           return;
         }
         ledgerEmpty.style.display = "none";
@@ -732,46 +1308,20 @@
           tr.addEventListener("click", () => {
             const rowIndex = Number.parseInt(String(tr.getAttribute("data-row-index") || "-1"), 10);
             const row = rowIndex >= 0 && rowIndex < pageRows.length ? pageRows[rowIndex] : null;
-            const entry = toNum(tr.getAttribute("data-entry-ms"));
-            const exit = toNum(tr.getAttribute("data-exit-ms"));
-            if (!state.klineChart || !Number.isFinite(entry)) return;
-            const left = entry - 6 * 3600 * 1000;
-            const right = Number.isFinite(exit) ? (exit + 6 * 3600 * 1000) : (entry + 6 * 3600 * 1000);
-            if (row) {
-              state.focusedTrade = row;
-              state.focusedTradeKey = tradeKey(row);
-              setTimelineMode("trade");
-              renderTimelineChart();
-              renderLedger();
-            }
-            state.klineChart.dispatchAction({
-              type: "dataZoom",
-              startValue: left,
-              endValue: right,
-            });
-            if (state.equityChart) {
-              state.equityChart.dispatchAction({
-                type: "dataZoom",
-                startValue: left,
-                endValue: right,
-              });
-            }
-            if (state.timelineChart) {
-              state.timelineChart.dispatchAction({
-                type: "dataZoom",
-                startValue: left,
-                endValue: right,
-              });
-            }
-            if (row) {
-              setStatus(
-                "已聚焦交易 | 开仓=" + row.entryTime
-                + " | 平仓=" + row.exitTime
-                + " | 方向=" + row.side
-              );
-            }
+            if (row) _focusTrade(row);
           });
         });
+        if (state.focusedTrade && !state.tradeDecisionContext) {
+          const symbol = _effectiveTradeSymbol(state.focusedTrade);
+          state.tradeDecisionContext = {
+            trade: state.focusedTrade,
+            symbol,
+            entry: _findDecisionMatches(state.focusedTrade.entryMs, "ENTER", symbol),
+            exit: _findDecisionMatches(state.focusedTrade.exitMs, "EXIT", symbol),
+          };
+        }
+        renderTradeDecisionContext();
+        if (timelineNeedsRefresh && state.timelineChart) renderTimelineChart();
       };
 
       const klineViewportRange = () => {
@@ -1057,7 +1607,9 @@
         if (state.focusedTrade && !tradeRows.some((r) => tradeKey(r) === state.focusedTradeKey)) {
           state.focusedTrade = null;
           state.focusedTradeKey = "";
+          state.tradeDecisionContext = null;
           setTimelineMode("global");
+          renderTradeDecisionContext();
         }
         const widthPx = Math.max(600, (document.getElementById("klineChart").clientWidth || 1200));
         const targetBars = Math.floor(widthPx * 2);
@@ -1121,7 +1673,9 @@
         state.manifest = null;
         state.focusedTrade = null;
         state.focusedTradeKey = "";
+        state.tradeDecisionContext = null;
         setTimelineMode("global");
+        renderTradeDecisionContext();
         if (!files.length) {
           setStatus("未选择任何文件。");
           return;
@@ -1202,6 +1756,7 @@
             + " | 交易=" + state.trades.length
             + " | 资金曲线=" + state.equity.length
             + " | 时间线=" + state.timeline.length
+            + " | 决策链=" + state.decisionTrace.length
           );
         } catch (error) {
           setStatus("加载失败: " + String(error));
@@ -1209,6 +1764,8 @@
       };
 
       setTimelineMode("global");
+      renderTradeDecisionContext();
+      setLocateInfo("定位提示：请选择时间后点击“定位”。");
       if (runDirInput) runDirInput.addEventListener("change", loadFromFiles);
       if (reloadBtn) reloadBtn.addEventListener("click", loadFromFiles);
       if (rangeDays) rangeDays.addEventListener("change", async () => {
@@ -1216,8 +1773,10 @@
         state.ledgerPage = 1;
         state.focusedTrade = null;
         state.focusedTradeKey = "";
+        state.tradeDecisionContext = null;
         setTimelineMode("global");
         renderLedger();
+        renderTradeDecisionContext();
         renderCharts();
         const activeWindow = visibleWindow();
         setStatus(
@@ -1226,6 +1785,7 @@
           + " | 交易=" + state.trades.length
           + " | 资金曲线=" + state.equity.length
           + " | 时间线=" + state.timeline.length
+          + " | 决策链=" + state.decisionTrace.length
         );
       });
       if (timelineModeSelect) timelineModeSelect.addEventListener("change", () => {
@@ -1233,8 +1793,10 @@
         if (nextMode !== "trade") {
           state.focusedTrade = null;
           state.focusedTradeKey = "";
+          state.tradeDecisionContext = null;
           setTimelineMode("global");
           renderLedger();
+          renderTradeDecisionContext();
           renderTimelineChart();
           return;
         }
@@ -1246,12 +1808,15 @@
         }
         setTimelineMode("trade");
         renderTimelineChart();
+        renderTradeDecisionContext();
       });
       if (timelineResetBtn) timelineResetBtn.addEventListener("click", () => {
         state.focusedTrade = null;
         state.focusedTradeKey = "";
+        state.tradeDecisionContext = null;
         setTimelineMode("global");
         renderLedger();
+        renderTradeDecisionContext();
         renderTimelineChart();
         setStatus("时间线已切换为全局模式。");
       });
@@ -1262,6 +1827,137 @@
       if (ledgerNext) ledgerNext.addEventListener("click", () => {
         state.ledgerPage += 1;
         renderLedger();
+      });
+      const applyLedgerFilters = () => {
+        state.ledgerPage = 1;
+        renderLedger();
+      };
+      const clearLedgerFilters = () => {
+        if (ledgerSearch) ledgerSearch.value = "";
+        if (ledgerSideFilter) ledgerSideFilter.value = "all";
+        if (ledgerPnlFilter) ledgerPnlFilter.value = "all";
+        if (ledgerPnlMin) ledgerPnlMin.value = "";
+        if (ledgerPnlMax) ledgerPnlMax.value = "";
+        if (ledgerStartTime) ledgerStartTime.value = "";
+        if (ledgerEndTime) ledgerEndTime.value = "";
+        if (ledgerSort) ledgerSort.value = "entry_desc";
+        if (ledgerLocateTolerance) ledgerLocateTolerance.value = "0";
+        if (ledgerJumpPage) ledgerJumpPage.value = "";
+        setLocateInfo("定位提示：请选择时间后点击“定位”。");
+        state.ledgerPage = 1;
+        renderLedger();
+        setStatus("交易记录筛选已清空。");
+      };
+      const jumpLedgerPage = () => {
+        const { rows } = _currentLedgerRows();
+        const pages = Math.max(1, Math.ceil(rows.length / state.ledgerPageSize));
+        const target = Number.parseInt(String((ledgerJumpPage && ledgerJumpPage.value) || ""), 10);
+        if (!(target >= 1)) {
+          setStatus("请输入有效页码（>=1）。");
+          return;
+        }
+        state.ledgerPage = Math.max(1, Math.min(target, pages));
+        renderLedger();
+      };
+      const locateLedgerByTime = () => {
+        const raw = String((ledgerLocateTime && ledgerLocateTime.value) || "").trim();
+        const ts = parseUtcMs(raw);
+        if (!Number.isFinite(ts)) {
+          setLocateInfo("未定位到交易：请选择有效时间后再定位。", "warn");
+          setStatus("时间定位失败：请使用时间选择器选择有效时间。");
+          return;
+        }
+        const { rows } = _currentLedgerRows();
+        if (!rows.length) {
+          setLocateInfo("未定位到交易：当前筛选结果为空。", "warn");
+          setStatus("当前筛选结果为空，无法定位交易。");
+          return;
+        }
+        let bestIndex = -1;
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (let idx = 0; idx < rows.length; idx += 1) {
+          const row = rows[idx];
+          if (!Number.isFinite(row.entryMs)) continue;
+          const dist = Math.abs(row.entryMs - ts);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestIndex = idx;
+          }
+        }
+        if (bestIndex < 0) {
+          setLocateInfo("未定位到交易：当前结果中无有效开仓时间。", "warn");
+          setStatus("未找到可定位的交易时间。");
+          return;
+        }
+        const toleranceMinRaw = toNum(ledgerLocateTolerance && ledgerLocateTolerance.value);
+        const toleranceMin = Number.isFinite(toleranceMinRaw) && toleranceMinRaw > 0 ? toleranceMinRaw : null;
+        const deltaMin = bestDist / 60000.0;
+        const bestRow = rows[bestIndex];
+        if (Number.isFinite(toleranceMin) && deltaMin > toleranceMin) {
+          setLocateInfo(
+            "未定位到临近交易：最近记录为 "
+            + String(bestRow.entryTime || _formatUtc(bestRow.entryMs))
+            + "（偏差 " + deltaMin.toFixed(1) + " 分钟，超过阈值 " + toleranceMin.toFixed(0) + " 分钟）。",
+            "warn",
+          );
+          setStatus(
+            "定位未命中：最近交易在 "
+            + String(bestRow.entryTime || _formatUtc(bestRow.entryMs))
+            + "（偏差 " + deltaMin.toFixed(1) + " 分钟，超过阈值 " + toleranceMin.toFixed(0) + " 分钟）。"
+          );
+          return;
+        }
+        state.ledgerPage = Math.floor(bestIndex / state.ledgerPageSize) + 1;
+        renderLedger();
+        _focusTrade(bestRow);
+        setLocateInfo(
+          "定位成功："
+          + String(bestRow.entryTime || _formatUtc(bestRow.entryMs))
+          + "（偏差 " + deltaMin.toFixed(1) + " 分钟）。",
+          "ok",
+        );
+        setStatus(
+          "时间定位命中："
+          + String(bestRow.entryTime || _formatUtc(bestRow.entryMs))
+          + "（偏差 " + deltaMin.toFixed(1) + " 分钟）。"
+        );
+      };
+      if (ledgerApply) ledgerApply.addEventListener("click", applyLedgerFilters);
+      if (ledgerClear) ledgerClear.addEventListener("click", clearLedgerFilters);
+      if (ledgerJumpBtn) ledgerJumpBtn.addEventListener("click", jumpLedgerPage);
+      if (ledgerLocate) ledgerLocate.addEventListener("click", locateLedgerByTime);
+      if (ledgerSort) ledgerSort.addEventListener("change", applyLedgerFilters);
+      if (ledgerSideFilter) ledgerSideFilter.addEventListener("change", applyLedgerFilters);
+      if (ledgerPnlFilter) ledgerPnlFilter.addEventListener("change", applyLedgerFilters);
+      [ledgerSearch, ledgerPnlMin, ledgerPnlMax, ledgerStartTime, ledgerEndTime].forEach((el) => {
+        if (!el) return;
+        el.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            applyLedgerFilters();
+          }
+        });
+      });
+      if (ledgerLocateTime) ledgerLocateTime.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          locateLedgerByTime();
+        }
+      });
+      if (ledgerJumpPage) ledgerJumpPage.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          jumpLedgerPage();
+        }
+      });
+      if (decisionTraceModalClose) decisionTraceModalClose.addEventListener("click", () => {
+        _setDecisionModalOpen(false);
+      });
+      if (decisionTraceModal) decisionTraceModal.addEventListener("click", (event) => {
+        if (event.target === decisionTraceModal) _setDecisionModalOpen(false);
+      });
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && state.decisionModalOpen) _setDecisionModalOpen(false);
       });
       window.addEventListener("resize", () => {
         if (state.klineChart) state.klineChart.resize();
