@@ -18,7 +18,6 @@ from xtrader.backtests import (
     write_strategy_event_driven_outputs,
 )
 from xtrader.strategies import ProfileActionStrategy, StrategyContext, TradeAction
-from xtrader.strategies.intraday import ThresholdIntradayStrategy
 
 
 def _build_price_frame() -> pd.DataFrame:
@@ -348,58 +347,6 @@ def test_event_driven_backtest_executes_signal_orders_at_next_bar_open() -> None
     assert float(trade["exit_price"]) == pytest.approx(120.0)
 
 
-def test_btc_intraday_strategy_pipeline_end_to_end() -> None:
-    start = datetime(2026, 3, 20, 0, 0, tzinfo=timezone.utc)
-    features = pd.DataFrame(
-        {
-            "timestamp": [start + timedelta(minutes=5 * idx) for idx in range(6)],
-            "symbol": ["BTCUSDT"] * 6,
-            "value": [0.8, 0.7, 0.05, -0.2, -0.8, 0.0],
-        }
-    )
-    prices = pd.DataFrame(
-        {
-            "timestamp": [start + timedelta(minutes=5 * idx) for idx in range(8)],
-            "symbol": ["BTCUSDT"] * 8,
-            "close": [100.0, 101.0, 101.6, 101.2, 100.8, 100.2, 99.8, 100.0],
-            "funding_rate": [0.0] * 8,
-        }
-    )
-    context = StrategyContext(
-        as_of_time=start + timedelta(minutes=30),
-        universe=("BTCUSDT",),
-        inputs={"features": features},
-        params={
-            "entry_threshold": 0.5,
-            "exit_threshold": 0.1,
-            "position_size": 1.0,
-            "stop_loss": 0.02,
-            "take_profit": 0.03,
-            "time_stop_bars": 10,
-            "daily_loss_limit": 0.1,
-        },
-    )
-    actions = ThresholdIntradayStrategy().generate_actions(context).actions
-    result = run_event_driven_backtest(
-        actions=actions,
-        price_frame=prices,
-        config=EventDrivenBacktestConfig(
-            symbol="BTCUSDT",
-            interval_ms=300_000,
-            execution_lag_bars=1,
-            taker_fee_bps=6.0,
-            slippage_bps=2.0,
-            initial_equity=1000.0,
-        ),
-    )
-    assert result.summary.sample_count > 0
-    assert result.summary.trade_count >= 1
-    assert isinstance(result.summary.profit_factor, float)
-    assert isinstance(result.summary.expectancy, float)
-    assert isinstance(result.summary.max_drawdown, float)
-    assert isinstance(result.summary.net_return, float)
-
-
 def test_event_driven_report_smoke_writes_artifacts(tmp_path) -> None:
     start = datetime(2026, 3, 20, 0, 0, tzinfo=timezone.utc)
     actions = pd.DataFrame(
@@ -631,8 +578,8 @@ def test_event_driven_outputs_do_not_generate_hub_or_html_reports(tmp_path) -> N
             initial_equity=1000.0,
         ),
     )
-    root_a = tmp_path / "reports" / "threshold_intraday" / "20260320T000000Z_case_a"
-    root_b = tmp_path / "reports" / "threshold_intraday" / "20260320T000100Z_case_b"
+    root_a = tmp_path / "reports" / "profile_action" / "20260320T000000Z_case_a"
+    root_b = tmp_path / "reports" / "profile_action" / "20260320T000100Z_case_b"
     write_event_driven_outputs(
         report_root=root_a,
         config=EventDrivenBacktestConfig(symbol="BTCUSDT"),
@@ -658,7 +605,7 @@ def test_event_driven_outputs_do_not_generate_hub_or_html_reports(tmp_path) -> N
 
 
 def test_event_driven_outputs_write_diagnostics_and_timeline(tmp_path) -> None:
-    collection_root = tmp_path / "reports" / "threshold_intraday"
+    collection_root = tmp_path / "reports" / "profile_action"
     start = datetime(2026, 3, 20, 0, 0, tzinfo=timezone.utc)
     actions = pd.DataFrame(
         {
@@ -705,17 +652,17 @@ def test_event_driven_outputs_write_diagnostics_and_timeline(tmp_path) -> None:
 
 def test_strategy_scoped_report_root_and_outputs(tmp_path) -> None:
     root = build_strategy_report_root(
-        strategy_name="Threshold Intraday",
+        strategy_name="Profile Action",
         report_base=tmp_path / "reports" / "backtests" / "strategy",
-        run_id="20260320T000500Z_threshold_intraday",
+        run_id="20260320T000500Z_profile_action",
     )
     assert root == (
         tmp_path
         / "reports"
         / "backtests"
         / "strategy"
-        / "threshold_intraday"
-        / "20260320T000500Z_threshold_intraday"
+        / "profile_action"
+        / "20260320T000500Z_profile_action"
     )
 
     start = datetime(2026, 3, 20, 0, 0, tzinfo=timezone.utc)
@@ -743,16 +690,16 @@ def test_strategy_scoped_report_root_and_outputs(tmp_path) -> None:
         ),
     )
     outputs = write_strategy_event_driven_outputs(
-        strategy_name="Threshold Intraday",
+        strategy_name="Profile Action",
         report_base=tmp_path / "reports" / "backtests" / "strategy",
-        run_id="20260320T000500Z_threshold_intraday",
+        run_id="20260320T000500Z_profile_action",
         config=EventDrivenBacktestConfig(symbol="BTCUSDT"),
         result=result,
         price_frame=_build_price_frame(),
         actions=actions,
         signal_interval_ms=60_000,
     )
-    assert outputs["report_root"].endswith("reports/backtests/strategy/threshold_intraday/20260320T000500Z_threshold_intraday")
+    assert outputs["report_root"].endswith("reports/backtests/strategy/profile_action/20260320T000500Z_profile_action")
     assert outputs["strategy_collection_root"].endswith("reports/backtests/strategy")
     run_manifest_path = Path(outputs["report_root"]) / "run_manifest.json"
     assert run_manifest_path.exists()

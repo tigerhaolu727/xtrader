@@ -70,7 +70,7 @@
   },
   "signal_rules": {
     "entry": {
-      "mode": "threshold_intraday",
+      "mode": "legacy_single_feature_proxy",
       "feature_ref": "5m.macd_12_26_9.hist",
       "entry_threshold": 0.55,
       "exit_threshold": 0.15
@@ -96,7 +96,7 @@
     "profile_ref": "configs/strategy-profiles/five_min_regime_momentum/v0.3.json",
     "description": "Legacy runtime compatible comparison config for FiveMinRegimeMomentumStrategy v0.3.",
     "signal_column": "macd_12_26_9_hist",
-    "runtime_compat_mode": "threshold_intraday_single_feature",
+    "runtime_compat_mode": "legacy_single_feature_proxy",
     "conversion_notes": [
       "This file is for xtr_runtime_v1 compatibility only.",
       "Regime/group/rule scoring pipeline is not executable in legacy runtime.",
