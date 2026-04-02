@@ -1,5 +1,7 @@
 # Validation Plan (XTR-SP-008)
 
+> 历史说明（2026-04-02）：本记录对应当时“legacy 保留”阶段性结果；`XTR-SP-011` 已执行更高优先级决策，完成 Threshold 全量下线并替换原兼容路径。
+
 ## Planned Validation
 - [x] `main_entry_exports_profile_only_positive`：验证主入口仅暴露 `ProfileActionStrategy`。
 - [x] `legacy_threshold_import_positive`：验证 `xtrader.strategies.intraday` 仍可导入 `ThresholdIntradayStrategy`。
