@@ -1,0 +1,195 @@
+{
+  "schema_version": "xtrader.strategy_profile.v0.3",
+  "strategy_id": "profile_template_minimal",
+  "version": "v0.3-template",
+  "indicator_plan_by_tf": {
+    "5m": [
+      {
+        "instance_id": "ema_fast",
+        "family": "ema",
+        "params": {
+          "period": 12
+        }
+      },
+      {
+        "instance_id": "ema_slow",
+        "family": "ema",
+        "params": {
+          "period": 48
+        }
+      },
+      {
+        "instance_id": "atr_main",
+        "family": "atr",
+        "params": {
+          "period": 14
+        }
+      },
+      {
+        "instance_id": "dmi_main",
+        "family": "dmi",
+        "params": {
+          "di_period": 14,
+          "adx_period": 14
+        }
+      }
+    ]
+  },
+  "regime_spec": {
+    "decision_timeframe": "5m",
+    "alignment_policy": {
+      "mode": "ffill_last_closed",
+      "max_staleness_bars_by_tf": {}
+    },
+    "states": [
+      "TREND_CLEAN",
+      "TRANSITION"
+    ],
+    "classifier": {
+      "inputs": [
+        "f:5m:dmi_main:adx"
+      ],
+      "rules": [
+        {
+          "priority": 1,
+          "target_state": "TREND_CLEAN",
+          "conditions": [
+            {
+              "ref": "f:5m:dmi_main:adx",
+              "op": ">=",
+              "value": 20.0
+            }
+          ],
+          "enabled": true
+        }
+      ],
+      "default_state": "TRANSITION"
+    },
+    "groups": [
+      {
+        "group_id": "trend",
+        "rules": [
+          {
+            "rule_id": "trend_score_v1",
+            "score_fn": "trend_score",
+            "input_refs": [
+              "f:5m:ema_fast:value",
+              "f:5m:ema_slow:value",
+              "f:5m:atr_main:value"
+            ],
+            "params": {
+              "atr_scale": 1.5
+            },
+            "nan_policy": "neutral_zero",
+            "enabled": true
+          }
+        ],
+        "rule_weights": {
+          "trend_score_v1": 1.0
+        },
+        "enabled": true
+      }
+    ],
+    "state_group_weights": {
+      "TREND_CLEAN": {
+        "trend": 1.0
+      },
+      "TRANSITION": {
+        "trend": 1.0
+      }
+    }
+  },
+  "signal_spec": {
+    "entry_rules": [
+      {
+        "id": "long_entry_high",
+        "action": "ENTER_LONG",
+        "priority_rank": 10,
+        "score_range": {
+          "min": 0.2,
+          "max": null,
+          "min_inclusive": true,
+          "max_inclusive": true
+        },
+        "state_allow": [
+          "TREND_CLEAN"
+        ],
+        "state_deny": null,
+        "enabled": true
+      }
+    ],
+    "exit_rules": [
+      {
+        "id": "flat_exit_low",
+        "action": "EXIT",
+        "priority_rank": 20,
+        "score_range": {
+          "min": null,
+          "max": 0.0,
+          "min_inclusive": true,
+          "max_inclusive": true
+        },
+        "state_allow": null,
+        "state_deny": null,
+        "enabled": true
+      }
+    ],
+    "hold_rules": [
+      {
+        "id": "hold_fallback",
+        "action": "HOLD",
+        "priority_rank": 999,
+        "score_range": {
+          "min": -1.0,
+          "max": 1.0,
+          "min_inclusive": true,
+          "max_inclusive": true
+        },
+        "state_allow": null,
+        "state_deny": null,
+        "enabled": true
+      }
+    ],
+    "cooldown_bars": 0,
+    "cooldown_scope": "symbol_action",
+    "reason_code_map": {
+      "long_entry_high": "ENTRY_TREND_HIGH",
+      "flat_exit_low": "EXIT_TREND_WEAK",
+      "hold_fallback": "HOLD_DEFAULT"
+    }
+  },
+  "risk_spec": {
+    "size_model": {
+      "mode": "fixed_fraction",
+      "params": {
+        "fraction": 0.1
+      }
+    },
+    "stop_model": {
+      "mode": "fixed_pct",
+      "params": {
+        "pct": 0.01
+      }
+    },
+    "take_profit_model": {
+      "mode": "rr_multiple",
+      "params": {
+        "multiple": 2.0
+      }
+    },
+    "time_stop": {
+      "bars": 24
+    },
+    "portfolio_guards": {
+      "daily_loss_limit": 0.05,
+      "max_concurrent_positions": 1
+    },
+    "rounding_policy": {
+      "price_dp": 4,
+      "size_dp": 4
+    }
+  },
+  "metadata": {
+    "note": "Minimal profile template for onboarding and smoke checks."
+  }
+}

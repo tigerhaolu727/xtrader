@@ -1,0 +1,289 @@
+{
+  "$id": "xtrader.schemas.regime_spec.v0_3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision_timeframe",
+    "alignment_policy",
+    "states",
+    "classifier",
+    "groups",
+    "state_group_weights"
+  ],
+  "properties": {
+    "decision_timeframe": {
+      "$ref": "#/$defs/timeframe"
+    },
+    "alignment_policy": {
+      "$ref": "#/$defs/alignment_policy"
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/state_name"
+      }
+    },
+    "classifier": {
+      "$ref": "#/$defs/classifier"
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/group"
+      }
+    },
+    "state_group_weights": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/group_weight_map"
+      }
+    }
+  },
+  "$defs": {
+    "timeframe": {
+      "type": "string",
+      "pattern": "^[0-9]+[smhdw]$"
+    },
+    "state_name": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "alignment_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "ffill_last_closed"
+          ]
+        },
+        "max_staleness_bars_by_tf": {
+          "type": "object",
+          "default": {},
+          "patternProperties": {
+            "^[0-9]+[smhdw]$": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "feature_ref": {
+      "type": "string",
+      "pattern": "^f:[^:]+:[^:]+:[^:]+$"
+    },
+    "classifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputs",
+        "rules",
+        "default_state"
+      ],
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/feature_ref"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/classifier_rule"
+          }
+        },
+        "default_state": {
+          "$ref": "#/$defs/state_name"
+        }
+      }
+    },
+    "classifier_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "priority",
+        "target_state",
+        "conditions"
+      ],
+      "properties": {
+        "priority": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "target_state": {
+          "$ref": "#/$defs/state_name"
+        },
+        "conditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/predicate"
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "predicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "op"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/feature_ref"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!=",
+            "between"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "between"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "min",
+              "max"
+            ]
+          },
+          "else": {
+            "required": [
+              "value"
+            ]
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "score_fn",
+        "input_refs"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score_fn": {
+          "type": "string",
+          "enum": [
+            "trend_score",
+            "momentum_score",
+            "direction_score",
+            "volume_score",
+            "pullback_score"
+          ]
+        },
+        "input_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/feature_ref"
+          }
+        },
+        "params": {
+          "type": "object",
+          "default": {}
+        },
+        "nan_policy": {
+          "type": "string",
+          "enum": [
+            "neutral_zero"
+          ],
+          "default": "neutral_zero"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "rules",
+        "rule_weights"
+      ],
+      "properties": {
+        "group_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "rule_weights": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0.0
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "group_weight_map": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0.0
+      }
+    }
+  }
+}

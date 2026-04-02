@@ -1,0 +1,48 @@
+{
+  "schema_version": "xtr_runtime_v1",
+  "strategy_id": "threshold_intraday_btcusdt_5m_3y",
+  "execution_timeframe": "5m",
+  "timeframes": [
+    "5m"
+  ],
+  "indicator_plan_by_tf": {
+    "5m": [
+      {
+        "family": "macd",
+        "instance_id": "macd_main",
+        "params": {
+          "fast": 12,
+          "slow": 26,
+          "signal": 9
+        }
+      }
+    ]
+  },
+  "signal_rules": {
+    "entry": {
+      "mode": "threshold_intraday",
+      "feature_ref": "5m.macd_main.hist"
+    }
+  },
+  "risk_rules": {
+    "position_size": {
+      "mode": "fixed_fraction",
+      "value": 0.1
+    },
+    "stop_loss": {
+      "mode": "atr_multiple",
+      "n": 14,
+      "k": 2.0
+    },
+    "take_profit": {
+      "mode": "rr_multiple",
+      "rr": 2.0
+    }
+  },
+  "warn_policy": "record_only",
+  "metadata": {
+    "description": "Runtime backtest config for ThresholdIntradayStrategy on BTCUSDT 5m, past three years.",
+    "dataset": "bitget.linear_swap.BTCUSDT.5m",
+    "signal_column": "macd_12_26_9_hist"
+  }
+}

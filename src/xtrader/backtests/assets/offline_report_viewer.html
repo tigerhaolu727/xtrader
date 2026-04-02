@@ -1,0 +1,1274 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>离线回测查看器（Offline Backtest Viewer）</title>
+  <script src="./echarts.min.js"></script>
+  <script src="./vendor/hyparquet.bundle.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --up: #16a34a;
+      --down: #dc2626;
+      --accent: #0f766e;
+    }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #ecfeff 0%, var(--bg) 45%);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
+    }
+    .wrap {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .title {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .sub {
+      margin: 0 0 14px 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .controls input,
+    .controls select,
+    .controls button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+    .controls button {
+      cursor: pointer;
+    }
+    .status {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 8px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+    }
+    .card .k {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .card .v {
+      font-size: 18px;
+      font-weight: 700;
+      font-family: "IBM Plex Mono", monospace;
+    }
+    .chart {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    #klineChart { height: 430px; }
+    #equityChart { height: 220px; }
+    #timelineChart { height: 220px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 6px;
+      font-size: 12px;
+      text-align: left;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .num {
+      text-align: right;
+      font-family: "IBM Plex Mono", monospace;
+    }
+    tr:hover { background: #f8fafc; }
+    .win { color: var(--up); }
+    .loss { color: var(--down); }
+    .empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 8px 0;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .panel-head h2 {
+      margin: 0;
+    }
+    .controls.slim {
+      margin-bottom: 0;
+    }
+    .table-wrap {
+      overflow-x: auto;
+    }
+    #ledgerBody tr.active {
+      background: #eef6ff;
+    }
+    .pager {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title">离线回测查看器（Offline Backtest Viewer）</h1>
+    <p class="sub">请选择单个 Run 目录，系统将自动读取目录内 <code>run_manifest.json</code> 并加载对应数据文件。</p>
+    <div class="panel">
+      <div class="controls">
+        <label for="runDir"><strong>Run目录（Run Directory）</strong></label>
+        <input id="runDir" type="file" webkitdirectory directory multiple />
+        <label for="rangeDays">默认窗口（Window）</label>
+        <select id="rangeDays">
+          <option value="7">7D</option>
+          <option value="30" selected>30D</option>
+          <option value="90">90D</option>
+          <option value="365">365D</option>
+          <option value="0">ALL</option>
+        </select>
+        <button id="reloadBtn" type="button">重新加载</button>
+      </div>
+      <div id="status" class="status">等待选择 Run 目录。</div>
+    </div>
+
+    <div class="panel">
+      <div id="summaryCards" class="grid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>K线（Kline）</h2>
+      <div id="klineChart" class="chart"></div>
+    </div>
+
+    <div class="panel">
+      <h2>资金曲线（Equity Curve）</h2>
+      <div id="equityChart" class="chart"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>信号与执行时间线（Signal vs Execution Timeline）</h2>
+        <div class="controls slim">
+          <label for="timelineMode">模式</label>
+          <select id="timelineMode">
+            <option value="global" selected>全局（Global）</option>
+            <option value="trade">单笔聚焦（Trade Focus）</option>
+          </select>
+          <button id="timelineResetBtn" type="button">返回全局</button>
+        </div>
+      </div>
+      <div id="timelineChart" class="chart"></div>
+    </div>
+
+    <div class="panel">
+      <h2>交易记录（Trade Ledger）</h2>
+      <div id="ledgerEmpty" class="empty" style="display:none">暂无交易记录。</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>方向</th>
+              <th>开仓时间</th>
+              <th>平仓时间</th>
+              <th class="num">开仓价</th>
+              <th class="num">平仓价</th>
+              <th class="num">数量</th>
+              <th class="num">净收益</th>
+            </tr>
+          </thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button id="ledgerPrev" type="button">上一页</button>
+        <span id="ledgerInfo">0 / 0</span>
+        <button id="ledgerNext" type="button">下一页</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const runDirInput = document.getElementById("runDir");
+      const reloadBtn = document.getElementById("reloadBtn");
+      const statusEl = document.getElementById("status");
+      const rangeDays = document.getElementById("rangeDays");
+      const timelineModeSelect = document.getElementById("timelineMode");
+      const timelineResetBtn = document.getElementById("timelineResetBtn");
+      const summaryCards = document.getElementById("summaryCards");
+      const ledgerBody = document.getElementById("ledgerBody");
+      const ledgerEmpty = document.getElementById("ledgerEmpty");
+      const ledgerInfo = document.getElementById("ledgerInfo");
+      const ledgerPrev = document.getElementById("ledgerPrev");
+      const ledgerNext = document.getElementById("ledgerNext");
+      const state = {
+        files: new Map(),
+        runRootPrefix: "",
+        manifest: null,
+        summary: null,
+        chunkSets: {},
+        chunkManifests: {},
+        chunkCache: {
+          prices: new Map(),
+          trades: new Map(),
+          equity: new Map(),
+          signal_execution: new Map(),
+        },
+        fullParquetPaths: {
+          prices: null,
+          trades: null,
+          equity: null,
+          signal_execution: null,
+        },
+        fullParquetCache: {
+          prices: null,
+          trades: null,
+          equity: null,
+          signal_execution: null,
+        },
+        bounds: { min: null, max: null },
+        trades: [],
+        equity: [],
+        timeline: [],
+        prices: [],
+        ledgerPage: 1,
+        ledgerPageSize: 200,
+        loadingVersion: 0,
+        klineChart: null,
+        equityChart: null,
+        timelineChart: null,
+        klineViewportRaf: 0,
+        timelineMode: "global",
+        focusedTrade: null,
+        focusedTradeKey: "",
+        klineRenderRows: [],
+        klineDomain: { min: null, max: null },
+      };
+
+      const setStatus = (text) => {
+        statusEl.textContent = text;
+      };
+
+      const normPath = (value) => String(value || "").replace(/^\.?\//, "").replace(/\\/g, "/");
+
+      const loadHyparquet = async () => {
+        const api = window.hyparquet;
+        if (!api || typeof api.parquetReadObjects !== "function") {
+          throw new Error("hyparquet 初始化失败，请重新执行 offline_report_viewer.py init。");
+        }
+        return api;
+      };
+
+      const toAsyncBuffer = (file) => ({
+        byteLength: Number(file && file.size) || 0,
+        slice: (start, end) => file.slice(start, end).arrayBuffer(),
+      });
+
+      const parseParquet = async (file) => {
+        const { parquetReadObjects } = await loadHyparquet();
+        const rows = await parquetReadObjects({
+          file: toAsyncBuffer(file),
+          rowFormat: "object",
+        });
+        return Array.isArray(rows) ? rows : [];
+      };
+
+      const parseUtcMs = (value) => {
+        if (value instanceof Date) {
+          const ts = value.getTime();
+          return Number.isFinite(ts) ? ts : null;
+        }
+        if (typeof value === "number") {
+          return Number.isFinite(value) ? value : null;
+        }
+        if (typeof value === "bigint") {
+          const asNumber = Number(value);
+          return Number.isFinite(asNumber) ? asNumber : null;
+        }
+        const t = Date.parse(String(value || ""));
+        return Number.isFinite(t) ? t : null;
+      };
+
+      const toNum = (v) => {
+        const n = Number.parseFloat(String(v));
+        return Number.isFinite(n) ? n : NaN;
+      };
+
+      const readFileText = async (file) => {
+        return await file.text();
+      };
+
+      const _manifestSuffix = "/run_manifest.json";
+
+      const detectManifestCandidate = () => {
+        const matches = [];
+        for (const [key, file] of state.files.entries()) {
+          if (key === "run_manifest.json" || key.endsWith(_manifestSuffix)) {
+            matches.push({ key, file });
+          }
+        }
+        if (!matches.length) {
+          return { ok: false, reason: "missing", file: null, key: "" };
+        }
+        if (matches.length > 1) {
+          return { ok: false, reason: "multiple", file: null, key: "" };
+        }
+        return { ok: true, reason: "ok", file: matches[0].file, key: matches[0].key };
+      };
+
+      const resolveRunRootPrefix = (manifestKey) => {
+        const key = normPath(manifestKey);
+        if (!key || key === "run_manifest.json") return "";
+        if (key.endsWith(_manifestSuffix)) return key.slice(0, -_manifestSuffix.length);
+        return "";
+      };
+
+      const findFile = (artifactPath) => {
+        const normalized = normPath(artifactPath);
+        if (!normalized) return null;
+        const prefix = normPath(state.runRootPrefix || "");
+        if (prefix) {
+          const prefixed = normPath(prefix + "/" + normalized);
+          if (state.files.has(prefixed)) return state.files.get(prefixed);
+        }
+        if (state.files.has(normalized)) return state.files.get(normalized);
+        const base = normalized.split("/").pop();
+        if (!base) return null;
+        if (prefix) {
+          const scope = prefix + "/";
+          for (const [key, file] of state.files.entries()) {
+            if (!key.startsWith(scope)) continue;
+            if (key.endsWith("/" + base) || key === base) return file;
+          }
+        }
+        for (const [key, file] of state.files.entries()) {
+          if (key.endsWith("/" + base) || key === base) return file;
+        }
+        return null;
+      };
+
+      const parsePriceRow = (row) => {
+        const ts = parseUtcMs(row.timestamp);
+        const close = toNum(row.close);
+        const open = Number.isFinite(toNum(row.open)) ? toNum(row.open) : close;
+        const high = Number.isFinite(toNum(row.high)) ? toNum(row.high) : Math.max(open, close);
+        const low = Number.isFinite(toNum(row.low)) ? toNum(row.low) : Math.min(open, close);
+        return { ts, open, high, low, close };
+      };
+
+      const parseTradeRow = (row) => ({
+        side: String(row.side || ""),
+        entryTime: String(row.entry_time || ""),
+        exitTime: String(row.exit_time || ""),
+        entryMs: parseUtcMs(row.entry_time),
+        exitMs: parseUtcMs(row.exit_time),
+        entryPrice: toNum(row.entry_price),
+        exitPrice: toNum(row.exit_price),
+        qty: toNum(row.quantity),
+        netPnl: toNum(row.net_pnl),
+      });
+
+      const parseEquityRow = (row) => ({
+        ts: parseUtcMs(row.timestamp),
+        equity: toNum(row.equity),
+      });
+
+      const parseTimelineRow = (row) => ({
+        signalTs: parseUtcMs(row.signal_time),
+        execTs: parseUtcMs(row.execution_time),
+        action: String(row.action || ""),
+        reason: String(row.reason || ""),
+        lagMs: toNum(row.lag_ms),
+      });
+
+      const DATASET_CONFIG = {
+        prices: {
+          parser: parsePriceRow,
+          sortKey: (row) => row.ts,
+          valid: (row) => Number.isFinite(row.ts) && Number.isFinite(row.close),
+          chunkSetKey: "prices",
+          timeRange: (row) => ({ start: row.ts, end: row.ts }),
+          fallbackMatchers: [(p) => p.endsWith("snapshots/base/price_5m.parquet")],
+        },
+        trades: {
+          parser: parseTradeRow,
+          sortKey: (row) => row.entryMs,
+          valid: (row) => Number.isFinite(row.entryMs),
+          chunkSetKey: "trades",
+          timeRange: (row) => ({ start: row.entryMs, end: row.entryMs }),
+          fallbackMatchers: [(p) => p.endsWith("ledgers/trades.parquet")],
+        },
+        equity: {
+          parser: parseEquityRow,
+          sortKey: (row) => row.ts,
+          valid: (row) => Number.isFinite(row.ts) && Number.isFinite(row.equity),
+          chunkSetKey: "equity",
+          timeRange: (row) => ({ start: row.ts, end: row.ts }),
+          fallbackMatchers: [(p) => p.endsWith("curves/equity_curve.parquet")],
+        },
+        signal_execution: {
+          parser: parseTimelineRow,
+          sortKey: (row) => row.signalTs,
+          valid: (row) => Number.isFinite(row.signalTs) && Number.isFinite(row.execTs),
+          chunkSetKey: "signal_execution",
+          timeRange: (row) => ({ start: row.signalTs, end: row.signalTs }),
+          fallbackMatchers: [(p) => p.endsWith("timelines/signal_execution.parquet")],
+        },
+      };
+
+      const sampleKlines = (rows, target) => {
+        if (rows.length <= target) return rows;
+        const bucket = Math.max(1, Math.ceil(rows.length / target));
+        const out = [];
+        for (let i = 0; i < rows.length; i += bucket) {
+          const chunk = rows.slice(i, Math.min(rows.length, i + bucket));
+          if (!chunk.length) continue;
+          const first = chunk[0];
+          const last = chunk[chunk.length - 1];
+          let high = Number.NEGATIVE_INFINITY;
+          let low = Number.POSITIVE_INFINITY;
+          for (const row of chunk) {
+            high = Math.max(high, row.high);
+            low = Math.min(low, row.low);
+          }
+          out.push({
+            ts: first.ts,
+            open: first.open,
+            close: last.close,
+            high,
+            low,
+          });
+        }
+        return out;
+      };
+
+      const sampleLine = (rows, target) => {
+        if (rows.length <= target) return rows;
+        const step = rows.length / target;
+        const out = [];
+        for (let i = 0; i < target; i += 1) {
+          const idx = Math.min(rows.length - 1, Math.floor(i * step));
+          out.push(rows[idx]);
+        }
+        return out;
+      };
+
+      const sampleRows = (rows, target) => {
+        if (rows.length <= target) return rows;
+        const step = rows.length / target;
+        const out = [];
+        for (let i = 0; i < target; i += 1) {
+          const idx = Math.min(rows.length - 1, Math.floor(i * step));
+          out.push(rows[idx]);
+        }
+        return out;
+      };
+
+      const aggregateTimelineRows = (rows, startMs, endMs, targetBuckets) => {
+        if (!rows.length) return [];
+        const left = Number.isFinite(startMs) ? startMs : rows[0].signalTs;
+        const right = Number.isFinite(endMs) ? endMs : rows[rows.length - 1].signalTs;
+        const spanMs = Math.max(1, right - left);
+        const bucketMs = Math.max(5 * 60 * 1000, Math.ceil(spanMs / Math.max(1, targetBuckets)));
+        const buckets = new Map();
+        for (const row of rows) {
+          if (!Number.isFinite(row.signalTs)) continue;
+          const bucketTs = Math.floor(row.signalTs / bucketMs) * bucketMs;
+          const key = String(bucketTs);
+          const item = buckets.get(key) || { ts: bucketTs, signalCount: 0, executionCount: 0, lagSum: 0, lagCount: 0 };
+          item.signalCount += 1;
+          if (Number.isFinite(row.execTs)) item.executionCount += 1;
+          if (Number.isFinite(row.lagMs)) {
+            item.lagSum += row.lagMs;
+            item.lagCount += 1;
+          }
+          buckets.set(key, item);
+        }
+        return Array.from(buckets.values()).sort((a, b) => a.ts - b.ts).map((item) => ({
+          ts: item.ts,
+          signalCount: item.signalCount,
+          executionCount: item.executionCount,
+          avgLagMs: item.lagCount > 0 ? (item.lagSum / item.lagCount) : NaN,
+        }));
+      };
+
+      const visibleWindow = () => {
+        const max = Number.isFinite(state.bounds.max) ? state.bounds.max : null;
+        const min = Number.isFinite(state.bounds.min) ? state.bounds.min : null;
+        if (!Number.isFinite(max) || !Number.isFinite(min)) return { start: null, end: null };
+        const d = Number.parseInt(rangeDays.value || "30", 10);
+        if (!(d > 0)) return { start: min, end: max };
+        const start = Math.max(min, max - d * 24 * 3600 * 1000);
+        return { start, end: max };
+      };
+
+      const withinWindow = (rows, keyFn) => {
+        const range = visibleWindow();
+        if (!Number.isFinite(range.start) || !Number.isFinite(range.end)) return rows;
+        return rows.filter((row) => {
+          const ts = keyFn(row);
+          return Number.isFinite(ts) && ts >= range.start && ts <= range.end;
+        });
+      };
+
+      const findArtifactPath = (manifest, matchers) => {
+        const artifacts = Array.isArray(manifest && manifest.artifacts) ? manifest.artifacts : [];
+        for (const item of artifacts) {
+          const path = normPath(item.path);
+          if (matchers.some((fn) => fn(path))) return path;
+        }
+        return null;
+      };
+
+      const overlapWindow = (startA, endA, startB, endB) => {
+        if (!Number.isFinite(startA) || !Number.isFinite(endA) || !Number.isFinite(startB) || !Number.isFinite(endB)) return false;
+        return startA <= endB && endA >= startB;
+      };
+
+      const loadChunkManifest = async (datasetKey) => {
+        const setInfo = state.chunkSets[datasetKey];
+        if (!setInfo || !setInfo.manifest_path) return null;
+        const manifestFile = findFile(setInfo.manifest_path);
+        if (!manifestFile) return null;
+        const payload = JSON.parse(await readFileText(manifestFile));
+        return payload;
+      };
+
+      const loadChunkRows = async (datasetName, start, end) => {
+        const config = DATASET_CONFIG[datasetName];
+        if (!config) return [];
+        const chunkManifest = state.chunkManifests[config.chunkSetKey];
+        if (!chunkManifest || !Array.isArray(chunkManifest.chunks)) return null;
+        const needed = chunkManifest.chunks.filter((chunk) => {
+          const cMin = parseUtcMs(chunk.min_time);
+          const cMax = parseUtcMs(chunk.max_time);
+          return overlapWindow(cMin, cMax, start, end);
+        });
+        const cache = state.chunkCache[config.chunkSetKey];
+        for (const chunk of needed) {
+          const chunkId = String(chunk.id || "");
+          if (!chunkId || cache.has(chunkId)) continue;
+          const file = findFile(chunk.file);
+          if (!file) continue;
+          const rows = (await parseParquet(file))
+            .map(config.parser)
+            .filter(config.valid)
+            .sort((a, b) => config.sortKey(a) - config.sortKey(b));
+          cache.set(chunkId, rows);
+        }
+        const merged = [];
+        for (const chunk of needed) {
+          const chunkId = String(chunk.id || "");
+          if (!chunkId) continue;
+          const rows = cache.get(chunkId) || [];
+          for (const row of rows) {
+            const r = config.timeRange(row);
+            if (!overlapWindow(r.start, r.end, start, end)) continue;
+            merged.push(row);
+          }
+        }
+        return merged.sort((a, b) => config.sortKey(a) - config.sortKey(b));
+      };
+
+      const loadFullParquetRows = async (datasetName, start, end) => {
+        const config = DATASET_CONFIG[datasetName];
+        if (!config) return [];
+        if (!state.fullParquetCache[config.chunkSetKey]) {
+          const path = state.fullParquetPaths[config.chunkSetKey];
+          if (!path) return [];
+          const file = findFile(path);
+          if (!file) return [];
+          state.fullParquetCache[config.chunkSetKey] = (await parseParquet(file))
+            .map(config.parser)
+            .filter(config.valid)
+            .sort((a, b) => config.sortKey(a) - config.sortKey(b));
+        }
+        const allRows = state.fullParquetCache[config.chunkSetKey] || [];
+        return allRows.filter((row) => {
+          const r = config.timeRange(row);
+          return overlapWindow(r.start, r.end, start, end);
+        });
+      };
+
+      const loadDatasetRows = async (datasetName, start, end) => {
+        const chunkRows = await loadChunkRows(datasetName, start, end);
+        if (Array.isArray(chunkRows)) return chunkRows;
+        return await loadFullParquetRows(datasetName, start, end);
+      };
+
+      const loadWindowData = async () => {
+        const token = state.loadingVersion + 1;
+        state.loadingVersion = token;
+        const windowRange = visibleWindow();
+        if (!Number.isFinite(windowRange.start) || !Number.isFinite(windowRange.end)) {
+          state.prices = [];
+          state.trades = [];
+          state.equity = [];
+          state.timeline = [];
+          return;
+        }
+        const [prices, trades, equity, timeline] = await Promise.all([
+          loadDatasetRows("prices", windowRange.start, windowRange.end),
+          loadDatasetRows("trades", windowRange.start, windowRange.end),
+          loadDatasetRows("equity", windowRange.start, windowRange.end),
+          loadDatasetRows("signal_execution", windowRange.start, windowRange.end),
+        ]);
+        if (state.loadingVersion !== token) return;
+        state.prices = prices;
+        state.trades = trades;
+        state.equity = equity;
+        state.timeline = timeline;
+      };
+
+      const renderSummary = () => {
+        const summary = state.summary || {};
+        const cards = [
+          ["交易笔数（trade_count）", summary.trade_count],
+          ["净收益率（net_return）", summary.net_return],
+          ["最大回撤（max_drawdown）", summary.max_drawdown],
+          ["胜率（win_rate）", summary.win_rate],
+          ["盈亏比（profit_factor）", summary.profit_factor],
+          ["期望值（expectancy）", summary.expectancy],
+        ];
+        summaryCards.innerHTML = cards.map(([k, v]) => {
+          return "<div class='card'><div class='k'>" + k + "</div><div class='v'>" + (v ?? "NA") + "</div></div>";
+        }).join("");
+      };
+
+      const tradeKey = (row) => {
+        const entry = Number.isFinite(row && row.entryMs) ? String(row.entryMs) : "na";
+        const exit = Number.isFinite(row && row.exitMs) ? String(row.exitMs) : "na";
+        return entry + "|" + exit + "|" + String(row && row.side || "");
+      };
+
+      const setTimelineMode = (mode) => {
+        const next = mode === "trade" ? "trade" : "global";
+        state.timelineMode = next;
+        if (timelineModeSelect) timelineModeSelect.value = next;
+        if (timelineResetBtn) timelineResetBtn.disabled = next !== "trade";
+      };
+
+      const renderLedger = () => {
+        const rows = withinWindow(state.trades, (r) => r.entryMs);
+        if (!rows.length) {
+          ledgerEmpty.style.display = "";
+          ledgerBody.innerHTML = "";
+          ledgerInfo.textContent = "0 / 0";
+          state.focusedTrade = null;
+          state.focusedTradeKey = "";
+          setTimelineMode("global");
+          return;
+        }
+        ledgerEmpty.style.display = "none";
+        const pages = Math.max(1, Math.ceil(rows.length / state.ledgerPageSize));
+        state.ledgerPage = Math.max(1, Math.min(state.ledgerPage, pages));
+        const start = (state.ledgerPage - 1) * state.ledgerPageSize;
+        const end = Math.min(rows.length, start + state.ledgerPageSize);
+        const pageRows = rows.slice(start, end);
+        ledgerBody.innerHTML = pageRows.map((r, idx) => {
+          const pnl = Number.isFinite(r.netPnl) ? r.netPnl : 0.0;
+          const cls = pnl >= 0 ? "win" : "loss";
+          const key = tradeKey(r);
+          const active = state.focusedTradeKey === key ? " active" : "";
+          return (
+            "<tr class='" + active.trim() + "' data-row-index='" + idx + "' data-entry-ms='" + r.entryMs + "' data-exit-ms='" + r.exitMs + "'>" +
+            "<td>" + (start + idx + 1) + "</td>" +
+            "<td>" + r.side + "</td>" +
+            "<td>" + r.entryTime + "</td>" +
+            "<td>" + r.exitTime + "</td>" +
+            "<td class='num'>" + r.entryPrice.toFixed(2) + "</td>" +
+            "<td class='num'>" + r.exitPrice.toFixed(2) + "</td>" +
+            "<td class='num'>" + r.qty.toFixed(4) + "</td>" +
+            "<td class='num " + cls + "'>" + pnl.toFixed(4) + "</td>" +
+            "</tr>"
+          );
+        }).join("");
+        ledgerInfo.textContent = state.ledgerPage + " / " + pages;
+        document.querySelectorAll("#ledgerBody tr").forEach((tr) => {
+          tr.addEventListener("click", () => {
+            const rowIndex = Number.parseInt(String(tr.getAttribute("data-row-index") || "-1"), 10);
+            const row = rowIndex >= 0 && rowIndex < pageRows.length ? pageRows[rowIndex] : null;
+            const entry = toNum(tr.getAttribute("data-entry-ms"));
+            const exit = toNum(tr.getAttribute("data-exit-ms"));
+            if (!state.klineChart || !Number.isFinite(entry)) return;
+            const left = entry - 6 * 3600 * 1000;
+            const right = Number.isFinite(exit) ? (exit + 6 * 3600 * 1000) : (entry + 6 * 3600 * 1000);
+            if (row) {
+              state.focusedTrade = row;
+              state.focusedTradeKey = tradeKey(row);
+              setTimelineMode("trade");
+              renderTimelineChart();
+              renderLedger();
+            }
+            state.klineChart.dispatchAction({
+              type: "dataZoom",
+              startValue: left,
+              endValue: right,
+            });
+            if (state.equityChart) {
+              state.equityChart.dispatchAction({
+                type: "dataZoom",
+                startValue: left,
+                endValue: right,
+              });
+            }
+            if (state.timelineChart) {
+              state.timelineChart.dispatchAction({
+                type: "dataZoom",
+                startValue: left,
+                endValue: right,
+              });
+            }
+            if (row) {
+              setStatus(
+                "已聚焦交易 | 开仓=" + row.entryTime
+                + " | 平仓=" + row.exitTime
+                + " | 方向=" + row.side
+              );
+            }
+          });
+        });
+      };
+
+      const klineViewportRange = () => {
+        const source = state._klineSource || [];
+        if (!source.length) return { start: null, end: null };
+        const minTs = source[0].ts;
+        const maxTs = source[source.length - 1].ts;
+        if (!state.klineChart) return { start: minTs, end: maxTs };
+        const option = state.klineChart.getOption();
+        const dz = Array.isArray(option.dataZoom) ? option.dataZoom[0] : null;
+        const startValue = toNum(dz && (dz.startValue !== undefined ? dz.startValue : NaN));
+        const endValue = toNum(dz && (dz.endValue !== undefined ? dz.endValue : NaN));
+        if (Number.isFinite(startValue) && Number.isFinite(endValue)) {
+          return { start: Math.min(startValue, endValue), end: Math.max(startValue, endValue) };
+        }
+        const startPct = toNum(dz && dz.start);
+        const endPct = toNum(dz && dz.end);
+        if (Number.isFinite(startPct) && Number.isFinite(endPct)) {
+          const span = Math.max(1, maxTs - minTs);
+          const normStart = Math.min(100, Math.max(0, startPct));
+          const normEnd = Math.min(100, Math.max(0, endPct));
+          const start = minTs + span * (normStart / 100);
+          const end = minTs + span * (normEnd / 100);
+          return { start: Math.min(start, end), end: Math.max(start, end) };
+        }
+        return { start: minTs, end: maxTs };
+      };
+
+      const computeKlineDomain = () => {
+        const source = Array.isArray(state._klineSource) ? state._klineSource : [];
+        if (!source.length) return { min: null, max: null };
+        const min = source[0].ts;
+        const max = source[source.length - 1].ts;
+        if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: null, max: null };
+        return { min, max };
+      };
+
+      const buildTradeMarkers = (trades, rangeStart, rangeEnd, maxMarkers) => {
+        if (!Array.isArray(trades) || !trades.length) return [];
+        const visible = trades.filter((row) => Number.isFinite(row.entryMs) && row.entryMs >= rangeStart && row.entryMs <= rangeEnd);
+        if (!visible.length) return [];
+        const sampledTrades = sampleRows(visible, Math.max(1, Math.floor(maxMarkers / 2)));
+        const markers = [];
+        for (const row of sampledTrades) {
+          if (Number.isFinite(row.entryMs) && Number.isFinite(row.entryPrice)) {
+            markers.push({
+              name: "entry",
+              value: row.side,
+              coord: [row.entryMs, row.entryPrice],
+              itemStyle: { color: "#2563eb" },
+              symbolSize: 10,
+            });
+          }
+          if (Number.isFinite(row.exitMs) && Number.isFinite(row.exitPrice)) {
+            markers.push({
+              name: "exit",
+              value: row.netPnl >= 0 ? "exit_win" : "exit_loss",
+              coord: [row.exitMs, row.exitPrice],
+              itemStyle: { color: row.netPnl >= 0 ? "#16a34a" : "#dc2626" },
+              symbolSize: 10,
+            });
+          }
+        }
+        return markers;
+      };
+
+      const refreshKlineTradeMarkers = () => {
+        if (!state.klineChart) return;
+        const range = klineViewportRange();
+        if (!Number.isFinite(range.start) || !Number.isFinite(range.end)) return;
+        const trades = Array.isArray(state._tradeRows) ? state._tradeRows : [];
+        const tradeMarkers = buildTradeMarkers(trades, range.start, range.end, 1200);
+        state.klineChart.setOption({
+          series: [{ id: "kline-main", markPoint: { data: tradeMarkers } }],
+        });
+      };
+
+      const refreshKlineSeriesByViewport = () => {
+        if (!state.klineChart) return;
+        const source = Array.isArray(state._klineSource) ? state._klineSource : [];
+        if (!source.length) {
+          state.klineRenderRows = [];
+          state.klineChart.setOption({
+            xAxis: { min: null, max: null },
+            series: [{ id: "kline-main", data: [] }],
+          });
+          return;
+        }
+        const domain = computeKlineDomain();
+        state.klineDomain = domain;
+        const range = klineViewportRange();
+        if (!Number.isFinite(range.start) || !Number.isFinite(range.end)) return;
+        const left = Math.min(range.start, range.end);
+        const right = Math.max(range.start, range.end);
+        const visible = source.filter((row) => row.ts >= left && row.ts <= right);
+        const widthPx = Math.max(600, (document.getElementById("klineChart").clientWidth || 1200));
+        const targetBars = Math.floor(widthPx * 2);
+        if (!visible.length) {
+          // Keep previous rendered rows when viewport is temporarily out of row boundaries.
+          // This avoids sudden jumps that can interfere with continuous zoom interactions.
+          state.klineChart.setOption({
+            xAxis: { min: domain.min, max: domain.max },
+          });
+          return;
+        }
+        const sampled = sampleKlines(visible, targetBars);
+        state.klineRenderRows = sampled;
+        state.klineChart.setOption({
+          xAxis: { min: domain.min, max: domain.max },
+          series: [{ id: "kline-main", data: sampled.map((r) => [r.ts, r.open, r.close, r.low, r.high]) }],
+        });
+      };
+
+      const updateKlineYAxis = () => {
+        if (!state.klineChart) return;
+        const source = Array.isArray(state.klineRenderRows) && state.klineRenderRows.length
+          ? state.klineRenderRows
+          : (state._klineSource || []);
+        if (!source.length) return;
+        let min = Number.POSITIVE_INFINITY;
+        let max = Number.NEGATIVE_INFINITY;
+        for (const row of source) {
+          min = Math.min(min, row.low);
+          max = Math.max(max, row.high);
+        }
+        if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return;
+        const pad = Math.max((max - min) * 0.08, 1e-9);
+        state.klineChart.setOption({
+          yAxis: { min: min - pad, max: max + pad },
+        });
+      };
+
+      const refreshKlineViewport = () => {
+        if (state.klineViewportRaf) return;
+        state.klineViewportRaf = window.requestAnimationFrame(() => {
+          state.klineViewportRaf = 0;
+          refreshKlineSeriesByViewport();
+          updateKlineYAxis();
+          refreshKlineTradeMarkers();
+        });
+      };
+
+      const timelineRowsByMode = () => {
+        const rows = withinWindow(state.timeline || [], (r) => r.signalTs);
+        if (state.timelineMode !== "trade") return rows;
+        const trade = state.focusedTrade;
+        if (!trade || !Number.isFinite(trade.entryMs)) return [];
+        const entry = trade.entryMs;
+        const exit = Number.isFinite(trade.exitMs) ? trade.exitMs : trade.entryMs;
+        const span = Math.max(0, exit - entry);
+        const pad = Math.max(30 * 60 * 1000, Math.floor(span * 0.25));
+        const left = Math.min(entry, exit) - pad;
+        const right = Math.max(entry, exit) + pad;
+        return rows.filter((r) => Number.isFinite(r.signalTs) && r.signalTs >= left && r.signalTs <= right);
+      };
+
+      const renderTimelineChart = () => {
+        if (typeof echarts === "undefined") return;
+        state.timelineChart = state.timelineChart || echarts.init(document.getElementById("timelineChart"));
+        const timelineRows = timelineRowsByMode();
+        const timelineDetailRows = sampleLine(timelineRows, 5000);
+        const timelineAggregateRows = aggregateTimelineRows(
+          timelineRows,
+          timelineRows.length ? timelineRows[0].signalTs : null,
+          timelineRows.length ? timelineRows[timelineRows.length - 1].signalTs : null,
+          420
+        );
+        const timelineUseAggregate = timelineRows.length > 2200;
+        state.timelineChart.setOption({
+          animation: false,
+          grid: { left: 64, right: 24, top: 16, bottom: 52 },
+          xAxis: { type: "time", axisLabel: { color: "#64748b" } },
+          yAxis: timelineUseAggregate
+            ? { type: "value", min: 0, axisLabel: { color: "#64748b" } }
+            : {
+                type: "value",
+                min: -0.5,
+                max: 1.5,
+                interval: 1,
+                axisLabel: {
+                  color: "#64748b",
+                  formatter: (v) => (v > 0.5 ? "信号（Signal）" : "执行（Execution）"),
+                },
+              },
+          dataZoom: [{ type: "inside", xAxisIndex: 0 }, { type: "slider", xAxisIndex: 0, height: 16 }],
+          tooltip: {
+            trigger: "item",
+            formatter: (params) => {
+              const d = params.data || {};
+              if (timelineUseAggregate) {
+                const lagText = Number.isFinite(d.avgLagMs) ? d.avgLagMs.toFixed(0) : "NA";
+                return "时间桶: " + new Date(d.ts).toISOString()
+                  + "<br/>信号数: " + d.signalCount
+                  + "<br/>执行数: " + d.executionCount
+                  + "<br/>平均延迟(ms): " + lagText;
+              }
+              if (d.kind === "line") {
+                return "动作: " + d.action + "<br/>原因: " + d.reason + "<br/>延迟(ms): " + d.lagMs.toFixed(0);
+              }
+              return "动作: " + d.action + "<br/>时间: " + new Date(d.value[0]).toISOString();
+            },
+          },
+          series: timelineUseAggregate
+            ? [
+                {
+                  type: "bar",
+                  itemStyle: { color: "#2563eb" },
+                  barMaxWidth: 18,
+                  data: timelineAggregateRows.map((r) => ({
+                    ts: r.ts,
+                    signalCount: r.signalCount,
+                    executionCount: r.executionCount,
+                    avgLagMs: r.avgLagMs,
+                    value: [r.ts, r.signalCount],
+                  })),
+                },
+                {
+                  type: "line",
+                  smooth: true,
+                  showSymbol: false,
+                  lineStyle: { width: 1.2, color: "#0f766e" },
+                  data: timelineAggregateRows.map((r) => ({
+                    ts: r.ts,
+                    signalCount: r.signalCount,
+                    executionCount: r.executionCount,
+                    avgLagMs: r.avgLagMs,
+                    value: [r.ts, r.executionCount],
+                  })),
+                },
+              ]
+            : [
+                {
+                  type: "lines",
+                  coordinateSystem: "cartesian2d",
+                  lineStyle: { width: 1, opacity: 0.45, color: "#64748b" },
+                  data: timelineDetailRows.map((r) => ({
+                    kind: "line",
+                    action: r.action,
+                    reason: r.reason,
+                    lagMs: r.lagMs,
+                    coords: [[r.signalTs, 1], [r.execTs, 0]],
+                  })),
+                },
+                {
+                  type: "scatter",
+                  symbolSize: 8,
+                  itemStyle: { color: "#2563eb" },
+                  data: timelineDetailRows.map((r) => ({
+                    kind: "signal",
+                    action: r.action,
+                    reason: r.reason,
+                    lagMs: r.lagMs,
+                    value: [r.signalTs, 1],
+                  })),
+                },
+                {
+                  type: "scatter",
+                  symbolSize: 8,
+                  itemStyle: { color: "#0f766e" },
+                  data: timelineDetailRows.map((r) => ({
+                    kind: "execution",
+                    action: r.action,
+                    reason: r.reason,
+                    lagMs: r.lagMs,
+                    value: [r.execTs, 0],
+                  })),
+                },
+              ],
+        }, true);
+      };
+
+      const renderCharts = () => {
+        if (typeof echarts === "undefined") {
+          setStatus("缺少 echarts.min.js，无法绘图。");
+          return;
+        }
+        const priceRows = withinWindow(state.prices, (r) => r.ts);
+        state._klineSource = priceRows;
+        state.klineRenderRows = [];
+        state.klineDomain = computeKlineDomain();
+        const tradeRows = withinWindow(state.trades, (r) => r.entryMs);
+        state._tradeRows = tradeRows;
+        if (state.focusedTrade && !tradeRows.some((r) => tradeKey(r) === state.focusedTradeKey)) {
+          state.focusedTrade = null;
+          state.focusedTradeKey = "";
+          setTimelineMode("global");
+        }
+        const widthPx = Math.max(600, (document.getElementById("klineChart").clientWidth || 1200));
+        const targetBars = Math.floor(widthPx * 2);
+        const equityRows = sampleLine(withinWindow(state.equity, (r) => r.ts), targetBars);
+
+        state.klineChart = state.klineChart || echarts.init(document.getElementById("klineChart"));
+        state.equityChart = state.equityChart || echarts.init(document.getElementById("equityChart"));
+        state.timelineChart = state.timelineChart || echarts.init(document.getElementById("timelineChart"));
+        state.klineChart.group = "offline-viewer";
+        state.equityChart.group = "offline-viewer";
+        state.timelineChart.group = "offline-viewer";
+        echarts.connect("offline-viewer");
+
+        state.klineChart.setOption({
+          animation: false,
+          grid: { left: 64, right: 24, top: 18, bottom: 64 },
+          xAxis: {
+            type: "time",
+            min: state.klineDomain.min,
+            max: state.klineDomain.max,
+            axisLabel: { color: "#64748b" },
+          },
+          yAxis: { scale: true, axisLabel: { color: "#64748b" } },
+          dataZoom: [{ type: "inside", xAxisIndex: 0 }, { type: "slider", xAxisIndex: 0, height: 18 }],
+          tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
+          series: [
+            {
+              id: "kline-main",
+              type: "candlestick",
+              data: sampleKlines(priceRows, targetBars).map((r) => [r.ts, r.open, r.close, r.low, r.high]),
+              itemStyle: {
+                color: "#16a34a",
+                color0: "#dc2626",
+                borderColor: "#16a34a",
+                borderColor0: "#dc2626",
+              },
+              markPoint: { data: [] },
+            },
+          ],
+        }, true);
+        refreshKlineViewport();
+        state.klineChart.off("datazoom");
+        state.klineChart.on("datazoom", () => refreshKlineViewport());
+
+        state.equityChart.setOption({
+          animation: false,
+          grid: { left: 64, right: 24, top: 12, bottom: 52 },
+          xAxis: { type: "time", axisLabel: { color: "#64748b" } },
+          yAxis: { scale: true, axisLabel: { color: "#64748b" } },
+          dataZoom: [{ type: "inside", xAxisIndex: 0 }, { type: "slider", xAxisIndex: 0, height: 16 }],
+          tooltip: { trigger: "axis", axisPointer: { type: "line" } },
+          series: [{ type: "line", showSymbol: false, lineStyle: { width: 1.4, color: "#0f766e" }, data: equityRows.map((r) => [r.ts, r.equity]) }],
+        }, true);
+        renderTimelineChart();
+      };
+
+      const loadFromFiles = async () => {
+        const files = Array.from(runDirInput.files || []);
+        state.files.clear();
+        state.runRootPrefix = "";
+        state.manifest = null;
+        state.focusedTrade = null;
+        state.focusedTradeKey = "";
+        setTimelineMode("global");
+        if (!files.length) {
+          setStatus("未选择任何文件。");
+          return;
+        }
+        for (const file of files) {
+          const rel = normPath(file.webkitRelativePath || file.name);
+          const parts = rel.split("/");
+          const normalizedRel = parts.length > 1 ? parts.slice(1).join("/") : rel;
+          state.files.set(normPath(normalizedRel), file);
+        }
+        const manifestCandidate = detectManifestCandidate();
+        if (!manifestCandidate.ok) {
+          if (manifestCandidate.reason === "missing") {
+            setStatus("加载失败：所选目录未找到 run_manifest.json，请选择单个回测 Run 目录。");
+            return;
+          }
+          if (manifestCandidate.reason === "multiple") {
+            setStatus("加载失败：所选目录中发现多个 run_manifest.json，请改为选择单个 Run 目录。");
+            return;
+          }
+        }
+        state.runRootPrefix = resolveRunRootPrefix(manifestCandidate.key);
+        try {
+          const manifest = JSON.parse(await readFileText(manifestCandidate.file));
+          state.manifest = manifest;
+          state.summary = manifest.summary || {};
+          state.chunkSets = manifest.chunk_sets || {};
+          state.chunkManifests = {};
+          for (const name of Object.keys(state.chunkCache)) state.chunkCache[name].clear();
+          for (const name of Object.keys(state.fullParquetCache)) state.fullParquetCache[name] = null;
+
+          for (const dataset of Object.keys(DATASET_CONFIG)) {
+            const config = DATASET_CONFIG[dataset];
+            state.fullParquetPaths[config.chunkSetKey] = findArtifactPath(manifest, config.fallbackMatchers);
+            state.chunkManifests[config.chunkSetKey] = await loadChunkManifest(config.chunkSetKey);
+          }
+
+          let minTs = Number.POSITIVE_INFINITY;
+          let maxTs = Number.NEGATIVE_INFINITY;
+          const chunkSets = state.chunkSets || {};
+          for (const setInfo of Object.values(chunkSets)) {
+            const item = setInfo || {};
+            const s = parseUtcMs(item.min_time);
+            const e = parseUtcMs(item.max_time);
+            if (Number.isFinite(s)) minTs = Math.min(minTs, s);
+            if (Number.isFinite(e)) maxTs = Math.max(maxTs, e);
+          }
+          if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) {
+            const artifacts = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
+            for (const item of artifacts) {
+              const s = parseUtcMs(item.min_time);
+              const e = parseUtcMs(item.max_time);
+              if (Number.isFinite(s)) minTs = Math.min(minTs, s);
+              if (Number.isFinite(e)) maxTs = Math.max(maxTs, e);
+            }
+          }
+          state.bounds = {
+            min: Number.isFinite(minTs) ? minTs : null,
+            max: Number.isFinite(maxTs) ? maxTs : null,
+          };
+          if (!Number.isFinite(state.bounds.min) || !Number.isFinite(state.bounds.max)) {
+            setStatus("manifest 缺少可用时间范围，无法加载视窗数据。");
+            return;
+          }
+
+          await loadWindowData();
+          state.ledgerPage = 1;
+          renderSummary();
+          renderLedger();
+          renderCharts();
+          const activeWindow = visibleWindow();
+          const mode = Object.values(state.chunkManifests).some((x) => !!x) ? "chunk" : "parquet";
+          setStatus(
+            "已加载 run_id=" + String(manifest.run_id || "unknown")
+            + " | 数据模式=" + (mode === "chunk" ? "分块（chunk）" : "Parquet")
+            + " | 窗口=" + new Date(activeWindow.start).toISOString() + " ~ " + new Date(activeWindow.end).toISOString()
+            + " | K线=" + state.prices.length
+            + " | 交易=" + state.trades.length
+            + " | 资金曲线=" + state.equity.length
+            + " | 时间线=" + state.timeline.length
+          );
+        } catch (error) {
+          setStatus("加载失败: " + String(error));
+        }
+      };
+
+      setTimelineMode("global");
+      if (runDirInput) runDirInput.addEventListener("change", loadFromFiles);
+      if (reloadBtn) reloadBtn.addEventListener("click", loadFromFiles);
+      if (rangeDays) rangeDays.addEventListener("change", async () => {
+        await loadWindowData();
+        state.ledgerPage = 1;
+        state.focusedTrade = null;
+        state.focusedTradeKey = "";
+        setTimelineMode("global");
+        renderLedger();
+        renderCharts();
+        const activeWindow = visibleWindow();
+        setStatus(
+          "窗口已切换 | " + new Date(activeWindow.start).toISOString() + " ~ " + new Date(activeWindow.end).toISOString()
+          + " | K线=" + state.prices.length
+          + " | 交易=" + state.trades.length
+          + " | 资金曲线=" + state.equity.length
+          + " | 时间线=" + state.timeline.length
+        );
+      });
+      if (timelineModeSelect) timelineModeSelect.addEventListener("change", () => {
+        const nextMode = String(timelineModeSelect.value || "global");
+        if (nextMode !== "trade") {
+          state.focusedTrade = null;
+          state.focusedTradeKey = "";
+          setTimelineMode("global");
+          renderLedger();
+          renderTimelineChart();
+          return;
+        }
+        if (!state.focusedTrade) {
+          setStatus("请先在交易记录中点击一笔交易，再进入单笔聚焦模式。");
+          setTimelineMode("global");
+          renderTimelineChart();
+          return;
+        }
+        setTimelineMode("trade");
+        renderTimelineChart();
+      });
+      if (timelineResetBtn) timelineResetBtn.addEventListener("click", () => {
+        state.focusedTrade = null;
+        state.focusedTradeKey = "";
+        setTimelineMode("global");
+        renderLedger();
+        renderTimelineChart();
+        setStatus("时间线已切换为全局模式。");
+      });
+      if (ledgerPrev) ledgerPrev.addEventListener("click", () => {
+        state.ledgerPage = Math.max(1, state.ledgerPage - 1);
+        renderLedger();
+      });
+      if (ledgerNext) ledgerNext.addEventListener("click", () => {
+        state.ledgerPage += 1;
+        renderLedger();
+      });
+      window.addEventListener("resize", () => {
+        if (state.klineChart) state.klineChart.resize();
+        if (state.equityChart) state.equityChart.resize();
+        if (state.timelineChart) state.timelineChart.resize();
+      });
+    })();
+  </script>
+</body>
+</html>

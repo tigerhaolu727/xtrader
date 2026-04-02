@@ -1,0 +1,107 @@
+{
+  "schema_version": "xtr_runtime_v1",
+  "strategy_id": "five_min_regime_momentum_v0_3_legacy",
+  "execution_timeframe": "5m",
+  "timeframes": [
+    "5m"
+  ],
+  "indicator_plan_by_tf": {
+    "5m": [
+      {
+        "instance_id": "ema_12",
+        "family": "ema",
+        "params": {
+          "period": 12
+        }
+      },
+      {
+        "instance_id": "ema_1",
+        "family": "ema",
+        "params": {
+          "period": 1
+        }
+      },
+      {
+        "instance_id": "ema_48",
+        "family": "ema",
+        "params": {
+          "period": 48
+        }
+      },
+      {
+        "instance_id": "macd_12_26_9",
+        "family": "macd",
+        "params": {
+          "fast": 12,
+          "slow": 26,
+          "signal": 9
+        }
+      },
+      {
+        "instance_id": "dmi_14_14",
+        "family": "dmi",
+        "params": {
+          "di_period": 14,
+          "adx_period": 14
+        }
+      },
+      {
+        "instance_id": "atr_14",
+        "family": "atr",
+        "params": {
+          "period": 14
+        }
+      },
+      {
+        "instance_id": "atr_pct_rank_252",
+        "family": "atr_pct_rank",
+        "params": {
+          "window": 252
+        }
+      },
+      {
+        "instance_id": "volume_variation_20",
+        "family": "volume_variation",
+        "params": {
+          "period": 20
+        }
+      }
+    ]
+  },
+  "signal_rules": {
+    "entry": {
+      "mode": "threshold_intraday",
+      "feature_ref": "5m.macd_12_26_9.hist",
+      "entry_threshold": 0.55,
+      "exit_threshold": 0.15
+    }
+  },
+  "risk_rules": {
+    "position_size": {
+      "mode": "fixed_fraction",
+      "value": 0.02
+    },
+    "stop_loss": {
+      "mode": "atr_multiple",
+      "n": 14,
+      "k": 2.0
+    },
+    "take_profit": {
+      "mode": "rr_multiple",
+      "rr": 2.0
+    }
+  },
+  "warn_policy": "record_only",
+  "metadata": {
+    "profile_ref": "configs/strategy-profiles/five_min_regime_momentum/v0.3.json",
+    "description": "Legacy runtime compatible comparison config for FiveMinRegimeMomentumStrategy v0.3.",
+    "signal_column": "macd_12_26_9_hist",
+    "runtime_compat_mode": "threshold_intraday_single_feature",
+    "conversion_notes": [
+      "This file is for xtr_runtime_v1 compatibility only.",
+      "Regime/group/rule scoring pipeline is not executable in legacy runtime.",
+      "Signal proxy uses MACD histogram as a single-feature approximation.",
+      "Risk model is mapped to v1 fixed_fraction + atr_multiple + rr_multiple contract."
+    ]
+  }
+}

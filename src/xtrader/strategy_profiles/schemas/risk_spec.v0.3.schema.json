@@ -1,0 +1,218 @@
+{
+  "$id": "xtrader.schemas.risk_spec.v0_3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "size_model",
+    "stop_model",
+    "take_profit_model",
+    "time_stop",
+    "portfolio_guards"
+  ],
+  "properties": {
+    "size_model": {
+      "$ref": "#/$defs/size_model_block"
+    },
+    "stop_model": {
+      "$ref": "#/$defs/stop_model_block"
+    },
+    "take_profit_model": {
+      "$ref": "#/$defs/take_profit_model_block"
+    },
+    "time_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bars"
+      ],
+      "properties": {
+        "bars": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "portfolio_guards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "daily_loss_limit"
+      ],
+      "properties": {
+        "daily_loss_limit": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "max_concurrent_positions": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      }
+    },
+    "rounding_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "price_dp": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 4
+        },
+        "size_dp": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 4
+        }
+      }
+    }
+  },
+  "$defs": {
+    "size_model_block": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "params"
+          ],
+          "properties": {
+            "mode": {
+              "const": "fixed_fraction"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fraction"
+              ],
+              "properties": {
+                "fraction": {
+                  "type": "number",
+                  "exclusiveMinimum": 0.0,
+                  "maximum": 1.0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "stop_model_block": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "params"
+          ],
+          "properties": {
+            "mode": {
+              "const": "fixed_pct"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "pct"
+              ],
+              "properties": {
+                "pct": {
+                  "type": "number",
+                  "exclusiveMinimum": 0.0,
+                  "maximum": 1.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "params"
+          ],
+          "properties": {
+            "mode": {
+              "const": "atr_multiple"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "multiple"
+              ],
+              "properties": {
+                "multiple": {
+                  "type": "number",
+                  "exclusiveMinimum": 0.0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "take_profit_model_block": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "params"
+          ],
+          "properties": {
+            "mode": {
+              "const": "fixed_pct"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "pct"
+              ],
+              "properties": {
+                "pct": {
+                  "type": "number",
+                  "exclusiveMinimum": 0.0,
+                  "maximum": 1.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "params"
+          ],
+          "properties": {
+            "mode": {
+              "const": "rr_multiple"
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "multiple"
+              ],
+              "properties": {
+                "multiple": {
+                  "type": "number",
+                  "exclusiveMinimum": 0.0
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

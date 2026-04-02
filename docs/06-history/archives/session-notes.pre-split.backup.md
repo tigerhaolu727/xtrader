@@ -1,0 +1,2495 @@
+# Session Notes
+
+> 维护变更记录与上下文，便于 CLI 重启后快速恢复。
+
+## 使用方式
+- 每次会话开始前，查看并补充最近一条记录，确认尚未完成的 TODO。
+- 结束前追加一条新记录，简明说明：
+  - 日期与时间段
+  - 完成的工作
+  - 遇到的问题（如果有）
+  - 下一步计划 / TODO
+- 记录保持精炼，控制在几个要点内，避免无关聊天内容。
+
+---
+
+## 模板
+
+```
+### 2026-03-26 10:00-12:00 CST
+- 完成：实现 ExchangeClient 抽象；新增核心数据模型。
+- 问题：Bitget WebSocket 订阅接口仍需确认实际 channel 名。
+- TODO：
+  1. 编写 BitgetClient 适配器骨架。
+  2. 为账户/持仓接口添加契约测试。
+```
+
+> 可以直接复制模板，按时间倒序追加即可。
+
+### 2026-03-26 15:00-17:00 CST
+- 完成：实现 `BitgetClient`（账户/持仓/历史 K 线）、配置与 API 签名；新增单元测试（MockTransport）；补充示例脚本与 README；按 `XTR-001` 验证计划运行 pytest。
+- 问题：实时 K 线订阅暂未实现，后续需独立任务。
+- TODO：
+  1. 编写 Bitget REST/WebSocket 适配器的错误重试与限速增强。
+  2. 规划实时 K 线订阅（新任务）与更多验证。
+
+### 2026-03-26 17:00-17:30 CST
+- 完成：新增 Bitget 集成测试（需实际凭证）、更新 Spec/Validation/README；运行集成测试（未配置凭证时自动跳过）以确保流程可执行。
+- 问题：尚未在真实凭证环境跑通。
+- TODO：
+  1. 在可用凭证环境中执行集成测试，记录结果。
+  2. 评估是否要把该测试纳入 CI 并通过密钥管理运行。
+
+### 2026-03-26 17:30-18:00 CST
+- 完成：支持 Bitget 客户端读取 HTTP/HTTPS 代理配置；`.env` 与 README 指南补充；集成测试可加载代理设置。
+- 问题：本地代理端口访问被安全策略阻断，导致连接失败（`httpx.ConnectError`），需在允许的网络环境重试。
+- TODO：
+  1. 在具备可访问代理或直连外网的环境中再次运行集成测试。
+  2. 观察 httpx 关于 `proxies` 参数的弃用警告，后续考虑迁移到 `proxy`/`mounts`。
+
+### 2026-03-26 18:00-18:15 CST
+- 完成：在启用新代理配置的环境中运行 `PYTHONPATH=src pytest tests/integration/test_bitget_client_live.py -vv`，记录失败日志并更新 `XTR-001` 验证文档。
+- 问题：HTTP(S) 代理 `127.0.0.1:7890` 仍被系统拒绝连接（`Operation not permitted`），无法完成到 Bitget 的外网请求。
+- TODO：
+  1. 改为可访问的代理/直连网络后再次执行该集成测试。
+  2. 根据 httpx 警告评估是否需要调整代理参数用法。
+
+### 2026-03-26 23:05-23:20 CST
+- 完成：依据 `XTR-002` 规格运行网络连通性检查（打印代理环境变量、尝试访问 Bitget 公共接口和 ifconfig.me），全部步骤记录于验证文档。
+- 问题：沙箱无法解析 `api.bitget.com` 与 `ifconfig.me`，导致 HTTP 请求在 DNS 阶段失败，确认当前会话仍无公网访问能力。
+- TODO：
+  1. 在具备 DNS / 外网访问权限的环境中复测 `XTR-002` 验证项。
+  2. 若后续需要运行 Bitget 集成测试，需先解决网络或代理通道。
+
+### 2026-03-27 00:00-00:30 CST
+- 完成：按 SDD 流程创建任务 `XTR-004`，补全 Spec 与 Validation，覆盖 K 线下载器需求分析（长区间分页、增量补数、reset、UTC 毫秒精度、时间对齐、可扩展架构）；执行 `task_guard.py check XTR-004` 通过。
+- 问题：尚未进入实现阶段，需用户确认 Spec 后再开始编码。
+- TODO：
+  1. 等待用户确认 `docs/specs/XTR-004.md` 与 `docs/validation/XTR-004.md`。
+  2. 确认后按 `XTR-004` 拆分实现任务（Provider/Planner/Storage/CLI）并补测试。
+
+### 2026-03-27 00:30-01:30 CST
+- 完成：实现 `XTR-004` MVP 下载器（Bitget Provider + SyncPlanner + KlineSyncEngine + 本地 Parquet 存储 + CLI），支持 `full/append/prepend/repair/reset`；完成时间对齐、UTC 毫秒规范、去重合并、缺口检测、索引元数据；新增单元测试并回归现有 Bitget 测试。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/exchanges/test_bitget_client.py` 通过（13 passed）；沙箱外 `tests/integration/test_bitget_client_live.py` 通过（2 passed, 1 skipped）；`task_guard.py check XTR-004` 通过。
+- TODO：
+  1. 根据真实数据规模评估 Parquet 分区文件滚动策略（单文件 vs 多 part 文件）。
+  2. 增加 CLI 运行日志文件输出与 `repair` 缺口报告落盘。
+
+### 2026-03-27 01:30-02:00 CST
+- 完成：按 `XTR-005` 将 K 线目录结构改为值路径与月份文件命名（`data/klines/{exchange}/{market}/{symbol}/{interval}/{YYYY}/{MM}.parquet`）；新增保护逻辑避免旧索引在新布局下误导增量计划；补充 storage 单测并回归。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/exchanges/test_bitget_client.py` 通过（14 passed）；沙箱外 `tests/integration/test_bitget_client_live.py` 通过（2 passed, 1 skipped）；`task_guard.py check XTR-005` 通过。
+- TODO：
+  1. 决定是否实现“旧目录自动迁移脚本”（当前为非兼容改动，旧数据需手动迁移或重下）。
+
+### 2026-03-27 02:00-02:20 CST
+- 完成：记录本轮协作约定，作为后续会话默认规则。
+- 约定（持续沿用）：
+  1. 仅当用户消息开头为“需求”或“BUG”时，进入 SDD 流程。
+  2. SDD 流程固定执行：`task_guard.py new` -> 填写 Spec/Validation -> 用户确认 -> `task_guard.py check` 通过后再编码。
+  3. 交付前必须更新 Validation 执行记录，并再次执行 `task_guard.py check`。
+  4. 每次会话结束前更新 `docs/session-notes.md`。
+  5. K 线下载能力当前基线：Bitget（Classic v2）、支持 `full/append/prepend/repair/reset`、统一 UTC 毫秒与 `[start, end)` 边界。
+  6. 当前 K 线存储结构基线：`data/klines/{exchange}/{market}/{symbol}/{interval}/{YYYY}/{MM}.parquet`，索引仍在 `data/klines_index/*.json`。
+  7. 旧目录结构数据不会自动兼容新布局，需手动迁移或接受重下。
+
+### 2026-03-27 14:40-15:00 CST
+- 完成：创建任务 `XTR-006`（统一重采样底座与因子按需加工架构），补全 Spec 与 Validation 初版内容，并记录流程守门命令。
+- 验证：执行 `python scripts/task_guard.py check XTR-006`，结果通过（`✓ Spec & Validation check passed.`）。
+- TODO：
+  1. 用户评审并确认 `docs/specs/XTR-006.md` 与 `docs/validation/XTR-006.md`。
+  2. 确认后进入实现阶段（重采样模块、质量校验、因子按需加工管线）。
+
+### 2026-03-27 15:00-15:05 CST
+- 完成：按用户要求将“统一重采样底座 + 因子按需加工”的分层目录逻辑补充到 `XTR-006` Spec/Validation。
+- 变更：在 Spec 中新增 Raw/Resample/Feature/Metadata/Report 文件结构规范与验收项；在 Validation 中新增文件结构校验计划并追加执行日志。
+- 验证：执行 `python scripts/task_guard.py check XTR-006`，结果通过（`✓ Spec & Validation check passed.`）。
+- TODO：用户确认后进入实现阶段。
+
+### 2026-03-27 15:05-15:20 CST
+- 完成：按 `XTR-006` 进入实现阶段，新增统一重采样底座 MVP：`KlineResampleEngine`、`resample_klines` CLI、`KlineLocalStore.load_records` 读取接口；支持 Raw->Resample 分层落盘、metadata `run_id` 记录、quality report 输出、不完整桶过滤。
+- 测试：新增 `tests/unit/data/test_kline_resample.py`（聚合正确性、文件结构、metadata/report 产出、不完整桶过滤、参数校验），并回归 `tests/unit/data` 与 `test_bitget_client.py`。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/exchanges/test_bitget_client.py` 通过（17 passed）；`python scripts/task_guard.py check XTR-006` 通过。
+- TODO：
+  1. 增加防泄漏专项校验（仅已收盘 bar、1 bar 执行延迟检查）。
+  2. 增加交易所高周期抽样对账脚本与阈值告警。
+
+### 2026-03-27 15:20-15:35 CST
+- 完成：实现 `XTR-006` 防泄漏专项校验。
+  1. 新增 `src/xtrader/backtests/leakage_guard.py`：`find_unclosed_bar_violations`（未收盘 bar 检查）、`find_execution_lag_violations`（信号执行最小 1 bar 延迟检查）。
+  2. 在 `src/xtrader/data/pipelines/kline_resample.py` 接入未收盘 bar 校验统计，输出 `leakage_unclosed_bar_violations` 到 summary/report。
+  3. 新增 `tests/unit/backtests/test_leakage_guard.py`，并扩展 `tests/unit/data/test_kline_resample.py` 覆盖允许不完整桶时的泄漏违规统计。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（21 passed）；`python scripts/task_guard.py check XTR-006` 通过。
+- TODO：后续接入策略/回测模块时，统一在信号落盘或回测入口调用 `find_execution_lag_violations` 作为强制守门。
+
+### 2026-03-27 15:35-15:50 CST
+- 完成：补齐 `XTR-006` 对账抽检实现与实测。
+  1. 新增对账引擎 `src/xtrader/data/pipelines/kline_reconcile.py`，支持本地重采样 K 线与 Bitget API 历史 K 线按 `open_time_ms` 对齐比对，输出 summary + mismatches。
+  2. 新增 CLI `src/xtrader/data/reconcile_klines.py`，支持时间窗、容差、报告落盘参数。
+  3. 新增单测 `tests/unit/data/test_kline_reconcile.py`，覆盖全匹配与价格不匹配场景。
+- 实测抽检：
+  - 先重采样样本窗口（2026-03-22 ~ 2026-03-23, 15m），产出 96 条。
+  - 再执行 API 对账（沙箱外）：`run_id=20260327T074532Z_9300ff1a`，结果 `96/96` 全匹配，`mismatch_rows=0`，`match_rate=1.000000`。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（23 passed）；`python scripts/task_guard.py check XTR-006` 通过。
+- TODO：后续可在 CI 增加“固定时间窗对账冒烟”任务，持续监控交易所口径漂移。
+
+### 2026-03-27 23:50-00:00 CST
+- 完成：创建任务 `XTR-007`（统一因子抽象与可扩展输入框架），补全 Spec 与 Validation，覆盖因子标准接口、可扩展输入协议、评估与回测对接、版本化与防泄漏约束。
+- 验证：执行 `python scripts/task_guard.py check XTR-007`，结果通过（`✓ Spec & Validation check passed.`）。
+- TODO：
+  1. 等待用户确认 `docs/specs/XTR-007.md` 与 `docs/validation/XTR-007.md`。
+  2. 确认后进入实现阶段（BaseFactor/FactorContext/FactorResult/Registry/Engine 最小骨架）。
+
+### 2026-03-28 00:00-00:20 CST
+- 完成：按 `XTR-007` 实现统一因子抽象与最小回测集成。
+  1. 新增因子核心协议与对象：`FactorSpec`、`FactorContext`、`FactorResult`、`DataView`、`BaseFactor`（`src/xtrader/factors/base.py`）。
+  2. 新增 `FactorRegistry` 与 `FactorEngine`（`src/xtrader/factors/registry.py`、`src/xtrader/factors/engine.py`），支持注册、依赖校验、参数校验、as-of 守门与 warmup 检查。
+  3. 新增内置因子 `MomentumFactor(mom_20)`、`VolatilityFactor(volatility_20)`（`src/xtrader/factors/builtin.py`）。
+  4. 新增最小端到端回测桥接 `run_single_factor_backtest`（`src/xtrader/backtests/factor_backtest.py`），支持执行延迟校验与收益汇总。
+- 测试：新增 `tests/unit/factors/test_factor_framework.py` 与 `tests/unit/backtests/test_factor_backtest.py`，覆盖协议、双因子运行、扩展输入兼容、防泄漏守门、回测集成。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（27 passed）；`python scripts/task_guard.py check XTR-007` 通过。
+- TODO：
+  1. 增加 `FeatureStore` 落盘与 `params_hash` 产物身份管理。
+  2. 接入统一 `FactorEvaluator`（IC/分层收益/换手/成本后收益）模块。
+
+### 2026-03-28 00:20-00:30 CST
+- 完成：创建任务 `XTR-008`（FeatureStore 因子产物存储与复现管理），补全 Spec 与 Validation。
+- 覆盖内容：统一存储 schema、identity 规则（factor/version/params_hash/data_version）、幂等写入、查询读取、元数据追溯、评估/回测复用与验收标准。
+- 验证：执行 `python scripts/task_guard.py check XTR-008`，结果通过（`✓ Spec & Validation check passed.`）。
+- TODO：等待用户确认文档后进入实现阶段（FeatureStore writer/reader/metadata + 单测）。
+
+### 2026-03-28 00:30-00:50 CST
+- 完成：按 `XTR-008` 实现 FeatureStore 与评估复用模块。
+  1. 新增 `src/xtrader/factors/feature_store.py`：`FeatureIdentity`、`FeatureStore`、`FeatureWriteSummary`、`build_params_hash`，支持标准因子产物分区落盘、幂等写入、条件读取、run_id 元数据追溯、质量报告。
+  2. 新增 `src/xtrader/factors/evaluator.py`：`FactorEvaluator` 与 `FactorICSummary`，支持从 FeatureStore 直接计算 IC/ICIR。
+  3. 更新 `src/xtrader/factors/__init__.py` 导出新模块。
+- 测试：新增 `tests/unit/factors/test_feature_store.py`，覆盖 `put/get/exists`、幂等、元数据追溯、评估复用、回测复用。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（29 passed）；`python scripts/task_guard.py check XTR-008` 通过。
+- TODO：后续可在 FeatureStore 增加 identity 索引清单与清理策略（冷热分层、过期归档）。
+
+### 2026-03-28 00:50-01:00 CST
+- 完成：在 `XTR-008` 中扩展 identity 索引与清理策略。
+  1. `FeatureStore` 新增 `data/features_index/identities.jsonl` 账本维护，支持 `list_identities` 查询。
+  2. 新增 `cleanup_identities`，支持 dry-run 与执行模式、`mark cold` 与 `delete` 状态迁移，并输出 `cleanup_report.md`。
+  3. `put/get` 已接入索引自动维护（`latest_run_id/last_accessed_at/status` 更新）。
+- 测试：`tests/unit/factors/test_feature_store.py` 新增索引与清理策略用例，验证 dry-run 不落删、执行模式按规则删除。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（30 passed）；`python scripts/task_guard.py check XTR-008` 通过。
+- TODO：后续可增加 cleanup CLI 调度入口（定期任务）与 pinned 管理接口。
+
+### 2026-03-28 01:00-01:20 CST
+- 完成：在 `XTR-008` 落地 cleanup CLI（`src/xtrader/factors/cleanup_features.py`），支持 identity 列表查询与清理执行。
+- 细节：
+  1. 新增命令参数：`--list-identities`、`--execute`、`--keep-recent-params`、`--cold-after-days`、`--delete-after-days`、`--as-of-time` 及路径参数。
+  2. 新增测试 `tests/unit/factors/test_cleanup_features_cli.py`，覆盖 list 模式与 execute 删除模式。
+  3. 更新 `docs/specs/XTR-008.md` 与 `docs/validation/XTR-008.md`，补充 CLI 需求与验证日志。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/factors/test_cleanup_features_cli.py tests/unit/factors/test_feature_store.py tests/unit/factors/test_factor_framework.py tests/unit/backtests/test_factor_backtest.py` 通过（9 passed）；`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（32 passed）；`python scripts/task_guard.py check XTR-008` 通过。
+- TODO：
+  1. 可选补充 `pyproject.toml` 的 console_scripts，支持更短命令名。
+
+### 2026-03-28 01:20-01:50 CST
+- 完成：创建并实现 `XTR-009`（因子评估流水线与报告标准化）第一版。
+- 细节：
+  1. 新增评估数据结构与方法：`FactorLayeredSummary`、`FactorStabilitySummary`、`FactorEvaluationSummary`，并在 `FactorEvaluator` 中实现 `compute_layered_returns_from_store`、`compute_stability_from_store`、`evaluate_from_store`。
+  2. 新增评估 CLI：`src/xtrader/factors/evaluate_factors.py`，支持 identity 参数、`horizon/execution_lag/quantiles`、symbols/time window、JSON 输出与 Markdown 报告落盘。
+  3. 新增测试：`tests/unit/factors/test_evaluator_pipeline.py`，覆盖指标输出、分层边界与 CLI 端到端。
+  4. 更新文档：`docs/specs/XTR-009.md` 与 `docs/validation/XTR-009.md`。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/factors/test_evaluator_pipeline.py tests/unit/factors/test_feature_store.py tests/unit/factors/test_factor_framework.py tests/unit/backtests/test_factor_backtest.py` 通过（10 passed, 2 warnings）；`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（35 passed, 2 warnings）；`python scripts/task_guard.py check XTR-009` 通过。
+- TODO：
+  1. 增加评估结果持久化（JSON artifact）与历史 run 索引。
+  2. 增加分层收益曲线/IC 时序图导出。
+
+### 2026-03-28 09:50-10:05 CST
+- 完成：按用户要求仅创建并补全 `XTR-010` 文档资产（不做实现）。
+  1. 创建任务：`python scripts/task_guard.py new XTR-010 --title "Walk-forward 策略回测框架"`。
+  2. 补全 `docs/specs/XTR-010.md`（Intent/Requirement/Design/Acceptance/Notes）。
+  3. 补全 `docs/validation/XTR-010.md`（Planned Validation/Execution Log/Evidence）。
+- 验证：`python scripts/task_guard.py check XTR-010` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：
+  1. 待用户评审确认 XTR-010 Spec/Validation。
+  2. 确认后再进入实现阶段（Planner/Runner/Aggregator/CLI）。
+
+### 2026-03-28 10:05-10:25 CST
+- 完成：按“因子研发清单”推进首批 5 因子落地（在既有 `mom_20/volatility_20` 上新增 `rev_5/volume_z_20/pv_corr_20`）。
+  1. 代码变更：`src/xtrader/factors/builtin.py` 新增三类因子实现与公共输出构造。
+  2. 导出更新：`src/xtrader/factors/__init__.py` 暴露新因子类。
+  3. 测试扩展：`tests/unit/factors/test_factor_framework.py` 新增“首批因子联跑”与 `volume` 列校验。
+  4. 稳定性修复：`tests/unit/factors/test_feature_store.py` 改为使用临时 `index_dir`，避免本地真实 identity 污染测试。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/factors/test_factor_framework.py tests/unit/factors/test_feature_store.py tests/unit/factors/test_evaluator_pipeline.py` 通过（11 passed）；`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（37 passed）。
+- TODO：
+  1. 用 `XTR-009` 对首批 5 因子做同口径批量评估并生成对比榜单。
+
+### 2026-03-28 10:25-10:40 CST
+- 完成：对首批 5 因子执行同口径批量评估（6 标的，5m，2026-03-20~2026-03-23）。
+  1. 批量写入 `FeatureStore`：`mom_20/rev_5/volatility_20/volume_z_20/pv_corr_20`。
+  2. 使用 `FactorEvaluator.evaluate_from_store` 输出 IC/分层收益/稳定性指标并按 `spread_mean` 排名。
+  3. 生成批量评估报告：`reports/features/XTR-009/batch_20260327T180330Z/factor_batch_ranking.md`。
+- 结论：当前短窗样本下 `pv_corr_20` 表现最优（`ic_mean=0.01399`, `spread_mean=2.47e-05`），`mom_20` 表现最弱。
+- TODO：
+  1. 将评估窗口扩展到更长区间（建议 3-6 个月）验证排名稳定性。
+
+### 2026-03-28 10:40-10:55 CST
+- 完成：为因子评估报告新增 HTML 可视化展示能力（保留原 Markdown 报告）。
+  1. 变更 `src/xtrader/factors/evaluate_factors.py`：CLI 输出新增 `html_report_path`，并生成 `evaluation_report.html`（KPI 卡片、指标条、明细表）。
+  2. 测试更新 `tests/unit/factors/test_evaluator_pipeline.py`：校验 HTML 报告落盘与页面标题内容。
+  3. 实跑验证：`pv_corr_20` 评估成功，产出 `reports/features/XTR-009/20260327T181009Z_765b390f/evaluation_report.html`。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/factors/test_evaluator_pipeline.py tests/unit/factors/test_factor_framework.py tests/unit/factors/test_feature_store.py` 通过（11 passed）；`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（37 passed）。
+- TODO：
+  1. 若后续需要更强可视化，可增加时序曲线（IC 时间序列、分层收益曲线）图表模块。
+
+### 2026-03-28 11:00-11:30 CST
+- 完成：围绕“因子假设研发”进行讨论与阶段性沉淀（以 BTCUSDT 与 OHLCV 为基础，逐步扩展到多标的/多周期）。
+- 讨论结论：
+  1. 因子研发先于策略推进，先做因子假设与评估闭环，再进入策略层。
+  2. 因子应同时覆盖人工可解释思路与 AI 探索思路，采用“双轨制”：
+     - 人工可解释轨：趋势/反转/波动/量价关系/多周期共振。
+     - AI 探索轨：受约束的表达式搜索（控制复杂度、防泄漏、参数有界）。
+  3. 多周期因子是必要方向：4H/1D 定趋势，1H 看结构，15m 做触发。
+  4. 指标解读框架确认：
+     - `ic_mean`：方向性预测能力（正负与强弱）。
+     - `spread_mean`：可交易分层收益空间。
+     - `icir/top_win_ratio/monotonicity`：稳定性与可执行性。
+- 已产出与结果：
+  1. 首批 5 因子批量评估完成（`mom_20/rev_5/volatility_20/volume_z_20/pv_corr_20`）。
+  2. 批量排名报告：`reports/features/XTR-009/batch_20260327T180330Z/factor_batch_ranking.md`。
+  3. 当前短窗样本中 `pv_corr_20` 相对最优，`mom_20` 相对最弱。
+  4. 评估 HTML 可视化已可用：`reports/features/XTR-009/20260327T181009Z_765b390f/evaluation_report.html`。
+- AI 因子假设讨论产物：
+  - 给出 8 条候选假设（regime_break, wick_volume_imbalance, multiframe_conflict, liquidity_vacuum_rebound, entropy_to_trend, vol_accel_transition, time_regime_interaction, convex_range_signal）。
+- 明日续接建议：
+  1. 先把 AI 假设整理为标准“因子描述卡”（公式/参数/方向/失效场景/验证计划）。
+  2. 从中挑选 4-6 条进入实现与同口径评估。
+  3. 将评估窗口扩展到 3-6 个月验证稳定性。
+
+### 2026-03-28 11:30-12:00 CST
+- 完成：按第一阶段计划落地两个 ML 因子 MVP（挂靠 `XTR-007` 接口规范）。
+  1. 新增 `lstm_ret_forecast_96`（纯 numpy 滚动序列回归基线）与 `ae_residual_mispricing`（滚动重构残差）实现：`src/xtrader/factors/builtin.py`。
+  2. 更新导出：`src/xtrader/factors/__init__.py`。
+  3. 新增联跑测试：`tests/unit/factors/test_factor_framework.py::test_factor_engine_runs_stage1_ml_factor_pack`。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/factors/test_factor_framework.py` 通过（6 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（38 passed, 2 warnings）。
+  3. `python scripts/task_guard.py check XTR-007` 通过。
+- TODO：
+  1. 使用 `XTR-009` 在更长窗口（3-6 个月）评估两个新因子稳定性。
+  2. 若要“真 LSTM/非线性 AE”，需引入深度学习依赖并增加训练产物管理。
+
+### 2026-03-28 12:00-12:40 CST
+- 完成：将第一阶段两个因子升级为“真 LSTM/非线性 AE”实现（PyTorch 路径）。
+  1. `lstm_ret_forecast_96` 改为滚动 walk-forward LSTM 训练+推理（序列窗口、重训间隔、训练轮数等参数化）。
+  2. `ae_residual_mispricing` 改为滚动非线性 Autoencoder 重构残差（ReLU 编解码器，历史窗口重训）。
+  3. `builtin.py` 改为懒加载 `torch`，避免在未运行 ML 因子时影响其他模块导入。
+  4. `pyproject.toml` 新增 `ml` 可选依赖：`torch>=2.2`。
+  5. 测试更新：`test_factor_framework.py` 改为子进程探测 torch runtime，可用时执行 ML 因子联跑，不可用则跳过。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/factors/test_factor_framework.py` 通过（5 passed, 1 skipped）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（37 passed, 1 skipped, 2 warnings）。
+  3. `python scripts/task_guard.py check XTR-007` 通过。
+- 环境备注：
+  - 当前环境中 `torch` 虽可安装，但 `import torch` 触发 OpenMP SHM 错误并中止进程（OMP Error #179），因此本机会自动跳过 ML 因子联跑测试；后续建议在可正常导入 torch 的研究环境执行端到端评估。
+- TODO：
+  1. 在可用 torch runtime 的环境跑 `lstm_ret_forecast_96` / `ae_residual_mispricing` 全量评估并写入 FeatureStore。
+  2. 增加训练产物（模型权重/标准化参数）落盘与 run_id 追溯。
+
+### 2026-03-28 20:50-21:00 CST
+- 完成：在非沙箱环境执行 torch 因子端到端实跑（`XTR-007`）。
+  1. 运行 `lstm_ret_forecast_96` 与 `ae_residual_mispricing`，数据窗口为 6 标的共享区间（2026-03-20 ~ 2026-03-22，5m，共 5184 行）。
+  2. 结果写入 FeatureStore，产出身份：
+     - `lstm_ret_forecast_96@v1 params_hash=00aa79500a36 data_version=xtr-007-ml-v1`
+     - `ae_residual_mispricing@v1 params_hash=89333bc4c8a9 data_version=xtr-007-ml-v1`
+  3. 使用 `FactorEvaluator.evaluate_from_store` 完成同口径评估。
+- 验证结果（摘要）：
+  1. `lstm_ret_forecast_96`：`ic_mean=0.017762`，`icir=0.038924`，`spread_mean=2.2206e-05`，`spread_sharpe=0.031900`。
+  2. `ae_residual_mispricing`：`ic_mean=0.008619`，`icir=0.019680`，`spread_mean=2.2004e-05`，`spread_sharpe=0.028657`。
+- 产物路径：
+  1. metadata：`data/features_meta/lstm_ret_forecast_96/v1/00aa79500a36/xtr-007-ml-v1/run_lstm_ret_forecast_96_20260328T125841Z.json`
+  2. metadata：`data/features_meta/ae_residual_mispricing/v1/89333bc4c8a9/xtr-007-ml-v1/run_ae_residual_mispricing_20260328T125851Z.json`
+  3. quality report：`reports/features/XTR-007-ml/run_lstm_ret_forecast_96_20260328T125841Z/feature_quality.md`
+  4. quality report：`reports/features/XTR-007-ml/run_ae_residual_mispricing_20260328T125851Z/feature_quality.md`
+- TODO：
+  1. 扩展评估窗口到 3-6 个月，并对比 15m/1h 周期稳定性。
+  2. 调参与模型复杂度约束（LSTM hidden/epochs，AE latent/hidden）并跟踪成本后收益。
+
+### 2026-03-28 21:05-21:10 CST
+- 完成：按用户要求重试非沙箱端到端 torch 因子流程（同参数、同数据窗）。
+- 结果：
+  1. `lstm_ret_forecast_96`：`run_id=run_lstm_ret_forecast_96_20260328T130506Z`，`written_rows=0`（幂等写入），评估指标与前次一致。
+  2. `ae_residual_mispricing`：`run_id=run_ae_residual_mispricing_20260328T130516Z`，`written_rows=0`（幂等写入），评估指标与前次一致。
+- 结论：当前参数与窗口下重复运行稳定，可复现。
+
+### 2026-03-29 10:05-10:45 CST
+- 完成：实现 `XTR-010` Walk-forward 策略回测框架首版（代码可运行）。
+  1. 新增模块：`src/xtrader/backtests/walk_forward.py`。
+     - `WalkForwardPlanner`：按 `train/validate/test + step` 生成滚动窗口。
+     - `WalkForwardRunner`：从 `FeatureStore + KlineLocalStore` 逐折执行分位数多空回测（含 `execution_lag_bars`、换手、覆盖率、收益风险指标）。
+     - `FoldMetricsAggregator`：聚合跨折统计并输出稳定性摘要。
+     - CLI：`python -m xtrader.backtests.walk_forward`，落盘 `folds/*.json`、`summary.json`、`walk_forward_report.md`。
+  2. 更新导出：`src/xtrader/backtests/__init__.py`。
+  3. 新增单测：`tests/unit/backtests/test_walk_forward.py`（Planner/Runner/Aggregator/CLI 冒烟）。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_walk_forward.py` 通过（4 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests/test_factor_backtest.py tests/unit/backtests/test_leakage_guard.py` 通过（4 passed）。
+  3. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` 通过（41 passed, 1 skipped, 2 warnings）。
+  4. `python scripts/task_guard.py check XTR-010` 通过。
+- 关联任务：`XTR-010`（Spec: `docs/specs/XTR-010.md`, Validation: `docs/validation/XTR-010.md`）。
+- 后续建议：
+  1. 在 Runner 中加入显式交易成本参数（bps）并纳入净值指标。
+  2. 扩展多因子组合权重策略（当前为跨因子 z-score 均值）。
+
+### 2026-03-29 03:05-03:10 CST
+- 完成：按用户确认执行手续费参数回测验证与敏感性分析（`XTR-010`）。
+  1. 基准（默认手续费，`maker=2bps / taker=6bps, maker_fill_ratio=0`）：
+     - `run_id=20260328T190616Z_4f368a6d`
+     - `cumulative_return_mean=-0.00942815`
+     - `sharpe_mean=-88.35983567`
+  2. 费率敏感性（固定 `maker=2bps / taker=6bps`）：
+     - `maker_fill_ratio=0.3`：`run_id=20260328T190655Z_12318db1`，`cumulative_return_mean=-0.00738759`，`sharpe_mean=-70.41604471`
+     - `maker_fill_ratio=0.6`：`run_id=20260328T190655Z_a7d025ca`，`cumulative_return_mean=-0.00534274`，`sharpe_mean=-51.55779571`
+  3. 对照（`maker=0bps / taker=0bps`）：
+     - `run_id=20260328T190718Z_8d7b394c`
+     - `cumulative_return_mean=0.00081758`
+     - `sharpe_mean=7.26700763`
+- 命令口径：
+  - `python -m xtrader.backtests.walk_forward --exchange bitget --market-type linear_swap --symbol-scope MULTI --interval 5m --factors mom_20:v1:4e5fc6a7d175:xtr-006-v1 --symbols BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,DOGEUSDT,BNBUSDT --start-time 2026-03-20T02:00:00Z --end-time 2026-03-22T23:55:00Z --interval-ms 300000 --train-span 192 --validate-span 96 --test-span 96 --step-span 96 --quantiles 5 --execution-lag-bars 1 --data-root data --report-root reports/backtests/XTR-010`
+- 关联任务：`XTR-010`。
+
+### 2026-03-29 03:10-03:15 CST
+- 完成：按用户要求执行多因子组合 `mom_20 + pv_corr_20 + volatility_20`，复核 fee 后表现（`XTR-010`）。
+  1. 无手续费对照（`maker=0bps / taker=0bps`）：
+     - `run_id=20260328T191221Z_47778fdb`
+     - `cumulative_return_mean=0.00255160`
+     - `sharpe_mean=23.13681580`
+     - `turnover_mean=0.13958333`
+  2. 默认手续费（`maker=2bps / taker=6bps, maker_fill_ratio=0`）：
+     - `run_id=20260328T191221Z_3381f98c`
+     - `cumulative_return_mean=-0.00547789`
+     - `sharpe_mean=-49.46626443`
+     - `turnover_mean=0.13958333`
+- 对比结论：
+  1. 多因子组合较单因子 `mom_20` 默认手续费结果有改善（`cumret_mean: -0.00942815 -> -0.00547789`，`turnover_mean: 0.17864583 -> 0.13958333`）。
+  2. 但在 `2/6bps` 成本口径下仍未转正，当前 edge 仍不足以覆盖手续费。
+- 命令口径：
+  - `python -m xtrader.backtests.walk_forward --exchange bitget --market-type linear_swap --symbol-scope MULTI --interval 5m --factors mom_20:v1:4e5fc6a7d175:xtr-006-v1,pv_corr_20:v1:4e5fc6a7d175:xtr-006-v1,volatility_20:v1:4e5fc6a7d175:xtr-006-v1 --symbols BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,DOGEUSDT,BNBUSDT --start-time 2026-03-20T02:00:00Z --end-time 2026-03-22T23:55:00Z --interval-ms 300000 --train-span 192 --validate-span 96 --test-span 96 --step-span 96 --quantiles 5 --execution-lag-bars 1 --data-root data --report-root reports/backtests/XTR-010`
+- 关联任务：`XTR-010`。
+
+### 2026-03-29 03:15-03:25 CST
+- 完成：按用户确认创建并补全策略模块任务资产 `XTR-011`（Spec + Validation）。
+  1. 创建任务：`python scripts/task_guard.py new XTR-011 --title "策略模块与组合构建框架"`。
+  2. 补全文档：`docs/specs/XTR-011.md`（Intent/Requirement/Design/Acceptance/Notes）。
+  3. 补全验证：`docs/validation/XTR-011.md`（Planned Validation/Execution Log/Evidence）。
+  4. 守门检查：`python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`（Spec: `docs/specs/XTR-011.md`, Validation: `docs/validation/XTR-011.md`）。
+- TODO：
+  1. 等用户确认 `XTR-011` 规格后，进入 MVP 实现（策略协议 + 基线多因子策略 + 组合约束 + Walk-forward 对接）。
+
+### 2026-03-29 03:25-03:35 CST
+- 完成：实现 `XTR-011` 第一阶段代码骨架（统一策略接口）。
+  1. 新增 `src/xtrader/strategies/base.py`：
+     - `StrategySpec`（参数 schema 解析与校验）
+     - `StrategyContext`（统一输入容器与 `require_input`）
+     - `StrategyResult`（标准输出与 schema 校验）
+     - `BaseStrategy`（`spec/generate` 抽象协议）
+  2. 更新导出：`src/xtrader/strategies/__init__.py`。
+  3. 新增单测：`tests/unit/strategies/test_base.py`（4 个用例）。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/strategies/test_base.py` 通过（4 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests/test_walk_forward.py` 通过（4 passed）。
+  3. `python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 进入下一步实现：基线策略（单因子分位、多因子加权）与组合约束模块。
+
+### 2026-03-29 03:35-03:50 CST
+- 完成：实现 `XTR-011` 基线策略并接入 Walk-forward。
+  1. 新增 `src/xtrader/strategies/builtin.py`：
+     - `QuantileLongShortStrategy`
+     - `MultiFactorWeightedRankStrategy`
+  2. 更新 `src/xtrader/strategies/__init__.py` 导出基线策略。
+  3. 改造 `src/xtrader/backtests/walk_forward.py`：
+     - 使用统一策略接口生成目标权重
+     - 新增策略配置字段 `strategy_id/factor_weights`
+     - CLI 支持 `--strategy-id` 与 `--factor-weights`
+     - 报告写入策略参数快照
+  4. 新增/扩展测试：
+     - `tests/unit/strategies/test_builtin.py`
+     - `tests/unit/backtests/test_walk_forward.py`（新增 `multi_factor_weighted_rank` 覆盖）
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/strategies/test_base.py tests/unit/strategies/test_builtin.py` 通过（7 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests/test_walk_forward.py` 通过（5 passed）。
+  3. `PYTHONPATH=src pytest -q tests/unit/backtests/test_factor_backtest.py tests/unit/backtests/test_leakage_guard.py` 通过（4 passed）。
+  4. `python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 实现组合约束模块（`max_weight/max_turnover/net_exposure`）并补对应测试。
+
+### 2026-03-29 03:50-04:05 CST
+- 完成：实现 `XTR-011` 组合约束模块并接入策略与回测参数。
+  1. 新增 `src/xtrader/strategies/portfolio.py`：
+     - `PortfolioConstraints`
+     - `apply_constraints`
+     - `compute_turnover`
+  2. 更新 `src/xtrader/strategies/builtin.py`：
+     - 基线策略支持 `max_weight_per_symbol / max_turnover_per_rebalance / net_exposure` 约束。
+  3. 更新 `src/xtrader/backtests/walk_forward.py`：
+     - `WalkForwardStrategyConfig` 新增
+       `gross_exposure_target / net_exposure_target / max_weight_per_symbol / max_turnover_per_rebalance`
+     - CLI 新增对应参数并写入报告。
+  4. 更新导出：`src/xtrader/strategies/__init__.py`。
+  5. 新增测试：`tests/unit/strategies/test_portfolio.py`，扩展 `tests/unit/strategies/test_builtin.py` 约束行为覆盖。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/strategies/test_base.py tests/unit/strategies/test_builtin.py tests/unit/strategies/test_portfolio.py` 通过（12 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests/test_walk_forward.py tests/unit/backtests/test_factor_backtest.py tests/unit/backtests/test_leakage_guard.py` 通过（9 passed）。
+  3. `python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 补跑更大范围回归（含 factors/data 模块）并记录结果。
+
+### 2026-03-29 04:05-04:15 CST
+- 完成：按用户确认执行“加约束前后”walk-forward 对比（`XTR-011`）。
+  1. 对比口径：`multi_factor_weighted_rank` + `mom_20,pv_corr_20,volatility_20`，同时间窗（2026-03-20~2026-03-22, 5m）、同 fee（maker 2bps / taker 6bps）。
+  2. 基线（弱约束）：`max_weight_per_symbol=1.0`，`max_turnover_per_rebalance=1.0`，`run_id=20260329T072838Z_847336c4`。
+  3. 约束版：`max_weight_per_symbol=0.25`，`max_turnover_per_rebalance=0.08`，`run_id=20260329T072838Z_85b0a732`。
+- 对比结果（摘要）：
+  1. `cumret_mean`: `-0.00547789 -> -0.00168046`（改善 `+0.00379742`）。
+  2. `turnover_mean`: `0.13958333 -> 0.04604203`（显著下降）。
+  3. `max_drawdown_mean`: `-0.00745810 -> -0.00264018`（回撤改善）。
+  4. `sharpe_mean`: `-49.46626443 -> -35.72391956`（改善但仍为负）。
+- 结论：组合约束已有效压降换手与成本拖累，fee 后表现明显改善，但该窗口下仍未达到正收益。
+- 验证：`python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+
+### 2026-03-29 04:15-04:25 CST
+- 完成：根据用户澄清（目标为 BTC 日内合约自动入场/止盈止损），重定义 `XTR-011` 架构范围。
+  1. 重写 `docs/specs/XTR-011.md`：
+     - 从“截面组合构权策略”切换为“动作型时序策略 + 仓位状态机 + 事件驱动回测”。
+     - 验收指标切换为交易系统口径（profit factor / expectancy / win rate / fee 后净收益等）。
+  2. 重写 `docs/validation/XTR-011.md`：
+     - 新增动作协议、状态机、风控、事件回测相关验证项。
+     - 标注 Legacy Notes：保留既有截面组合能力作为研究基线，但不再作为当前主验收目标。
+- 验证：`python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 进入 Phase A：落地动作型策略协议与状态机代码骨架。
+
+### 2026-03-29 04:25-04:45 CST
+- 完成：推进 `XTR-011` Phase A（动作策略底座 + 状态机 + 风控规则）。
+  1. 扩展 `src/xtrader/strategies/base.py` 动作协议资产：`TradeAction`、`ActionStrategyResult`、`BaseActionStrategy`、动作输出 schema。
+  2. 新增 `src/xtrader/strategies/state_machine.py`：`PositionState(FLAT/LONG/SHORT)`、`PositionStateMachine` 与 `ENTER/EXIT/REVERSE/HOLD` 转移逻辑。
+  3. 新增 `src/xtrader/strategies/risk.py`：`RiskConfig`、`RiskManager`，支持 `stop_loss/take_profit/time_stop/daily_loss_limit`。
+  4. 更新 `src/xtrader/strategies/__init__.py` 导出新接口（并保留旧截面策略导出兼容）。
+  5. 测试更新：扩展 `tests/unit/strategies/test_base.py`，新增 `tests/unit/strategies/test_state_machine.py` 与 `tests/unit/strategies/test_risk.py`。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/strategies/test_base.py tests/unit/strategies/test_builtin.py tests/unit/strategies/test_portfolio.py tests/unit/strategies/test_state_machine.py tests/unit/strategies/test_risk.py` -> `24 passed`。
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests/test_walk_forward.py tests/unit/backtests/test_factor_backtest.py tests/unit/backtests/test_leakage_guard.py` -> `9 passed`。
+  3. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` -> `66 passed, 1 skipped, 2 warnings`。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 进入 Phase B：新增事件驱动回测器（订单/成交/账本）与成本模型（fee/slippage/funding）。
+  2. 基于 BTC 单标的补首个动作策略样例（入场信号 + TP/SL + time stop），跑端到端交易明细验证。
+
+### 2026-03-29 04:45-04:55 CST
+- 完成：按用户确认先进行 `XTR-011` Phase B 需求整理（暂不编码）。
+  1. 更新 `docs/specs/XTR-011.md`：补充 Phase B MVP 口径（taker-only、下一根 bar 执行、防未来函数）。
+  2. 明确成本默认值：`maker=2bps/taker=6bps`，滑点 bps 参数化，资金费率计入净收益。
+  3. 补充验收标准：可复现性、账本对账公式、完整 `exit_reason` 约束。
+  4. 更新 `docs/validation/XTR-011.md`：细化事件回测/成本模型/账本对账/可复现性测试项。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 进入 Phase B 实现：先建 `execution simulator + trade ledger + cost model` 最小可运行骨架。
+
+### 2026-03-29 04:55-05:20 CST
+- 完成：按“BTC 单标的自动交易优先”执行一次主路径重构（`XTR-011`）。
+  1. 文档侧：更新 `docs/specs/XTR-011.md` 与 `docs/validation/XTR-011.md`，新增“主路径收敛 + legacy 隔离”约束。
+  2. 策略层：
+     - 新增 `src/xtrader/strategies/intraday.py`（`ThresholdIntradayStrategy`，时序信号 -> 动作流）。
+     - 新增 `src/xtrader/strategies/legacy.py`（集中导出旧截面选币策略能力）。
+     - 更新 `src/xtrader/strategies/__init__.py`：默认导出收敛为动作策略主路径，不再默认暴露截面选币类。
+  3. 回测层：
+     - 新增 `src/xtrader/backtests/event_driven.py`（单标的事件驱动回测、状态机+风控联动、fee/slippage/funding 成本归因、交易账本与指标）。
+     - 更新 `src/xtrader/backtests/__init__.py`：主入口导出 `run_event_driven_backtest`。
+     - 保留 `walk_forward.py` 作为 legacy 能力，并改为显式引用 `xtrader.strategies.legacy`。
+  4. 测试：
+     - 新增 `tests/unit/strategies/test_intraday.py`。
+     - 新增 `tests/unit/strategies/test_legacy_namespace.py`。
+     - 新增并扩展 `tests/unit/backtests/test_event_driven.py`（含账本对账与端到端管线）。
+     - 更新 `tests/unit/strategies/test_builtin.py`、`tests/unit/strategies/test_portfolio.py` 走 legacy 导入。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/strategies/test_base.py tests/unit/strategies/test_intraday.py tests/unit/strategies/test_builtin.py tests/unit/strategies/test_portfolio.py tests/unit/strategies/test_state_machine.py tests/unit/strategies/test_risk.py tests/unit/backtests/test_event_driven.py tests/unit/backtests/test_walk_forward.py` -> `33 passed`。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` -> `74 passed, 1 skipped, 2 warnings`。
+  3. `python scripts/task_guard.py check XTR-011` -> 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 补 Phase B “报告落盘冒烟测试”与“可复现性测试”（当前 validation 仍待勾选）。
+
+### 2026-03-29 05:20-05:30 CST
+- 完成：补齐 `XTR-011` 剩余验证项（报告落盘冒烟 + 可复现性）。
+  1. 在 `src/xtrader/backtests/event_driven.py` 新增 `write_event_driven_outputs`：
+     - 落盘 `summary.json / trades.csv / equity_curve.csv / event_driven_report.md`。
+     - 处理 `inf/nan` JSON 序列化。
+  2. 更新 `src/xtrader/backtests/__init__.py` 导出 `write_event_driven_outputs`。
+  3. 扩展 `tests/unit/backtests/test_event_driven.py`：
+     - `test_event_driven_report_smoke_writes_artifacts`
+     - `test_event_driven_backtest_reproducible_for_same_inputs`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `6 passed`。
+  2. `PYTHONPATH=src pytest -q tests/unit/strategies tests/unit/backtests` -> `43 passed`。
+  3. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` -> `76 passed, 1 skipped, 2 warnings`。
+  4. `python scripts/task_guard.py check XTR-011` -> 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. Phase C 前可选补充 event-driven CLI（统一 run_id 与 report-root 参数），便于批量实验管理。
+
+### 2026-03-29 05:30-05:40 CST
+- 完成：按用户建议整理 `strategies/builtin.py`，将策略拆分到独立目录，提升后续可维护性。
+  1. 新增目录 `src/xtrader/strategies/builtin_strategies/`，并按策略拆分文件：
+     - `quantile_long_short.py`
+     - `multi_factor_weighted_rank.py`
+     - `_common.py`（共享函数）
+     - `__init__.py`（统一导出）
+  2. `src/xtrader/strategies/builtin.py` 改为兼容导出层（保持旧 import 路径不破坏）。
+  3. `src/xtrader/strategies/legacy.py` 改为从新目录导入（作为 canonical 实现入口）。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/strategies/test_builtin.py tests/unit/strategies/test_legacy_namespace.py tests/unit/backtests/test_walk_forward.py tests/unit/strategies/test_intraday.py tests/unit/strategies/test_base.py tests/unit/strategies/test_portfolio.py tests/unit/strategies/test_state_machine.py tests/unit/strategies/test_risk.py` -> `33 passed`。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py` -> `76 passed, 1 skipped, 2 warnings`。
+  3. `python scripts/task_guard.py check XTR-011` -> 通过。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 后续新增 legacy 截面策略时，直接在 `builtin_strategies/` 新增单文件并在 `__init__.py` 注册。
+
+### 2026-03-29 17:00-17:30 CST
+- 完成：按 XTR-011 新目标完成“去选币化”重构，删除截面策略与回测链路（`legacy`/`builtin_strategies`/`walk_forward`/`portfolio`），并移除 AE 截面因子。
+- 完成：重构因子评估链路为单标的口径（仅 IC + Stability），`evaluate_factors` CLI 改为单标的模式，不再支持 `--symbols` 和 `--quantiles`。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/strategies tests/unit/factors tests/unit/backtests`（41 passed, 1 skipped）；`PYTHONPATH=src pytest -q tests/unit/data tests/unit/factors tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（61 passed, 1 skipped）。
+- 文档：更新 `docs/specs/XTR-011.md` 与 `docs/validation/XTR-011.md`，记录“移除 legacy 选币路径”的执行证据。
+- TODO：后续进入 Phase B 时，优先补 `execution` 模块（订单意图/成交回报抽象）与 paper trading 接线。
+
+### 2026-03-29 17:30-18:00 CST
+- 完成：按用户确认继续做“纯 CTA 收敛”，删除整个 `src/xtrader/factors/`（包含旧因子、评估与 `FeatureStore`）以及 `src/xtrader/backtests/factor_backtest.py`。
+- 完成：同步删除对应测试目录 `tests/unit/factors/` 与 `tests/unit/backtests/test_factor_backtest.py`，并更新 `src/xtrader/backtests/__init__.py` 导出，移除因子回测入口。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（48 passed）。
+- 文档：更新 `docs/specs/XTR-011.md` 与 `docs/validation/XTR-011.md`，明确“无需保留旧因子与 FeatureStore”。
+- TODO：下一步进入 Phase B，优先补 `execution` 订单模型与 paper trading 连接层。
+
+### 2026-03-29 18:00-18:20 CST
+- 完成：按“models 每个 class 单独文件”规则重构 `src/xtrader/common/models.py`，改为包结构 `src/xtrader/common/models/`。
+- 完成：新增 `market_type.py`、`position_side.py`、`candle_interval.py`、`exchange_feature.py`、`market_meta.py`、`account_balance.py`、`position.py`、`candle.py`，并由 `models/__init__.py` 统一导出，保持 `from xtrader.common.models import ...` 兼容。
+- 完成：删除旧文件 `src/xtrader/common/models.py`（单文件多 class）。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（48 passed）；`python scripts/task_guard.py check XTR-011` 通过。
+- TODO：下一步按同样规则拆分 `src/xtrader/strategies/base.py`（协议类）与 `src/xtrader/backtests/event_driven.py`（config/result/summary 与 engine 分离）。
+
+### 2026-03-29 20:50-21:05 CST
+- 完成：按用户要求将策略实现集中到独立目录，新增 `src/xtrader/strategies/builtin_strategies/`。
+- 完成：将 `ThresholdIntradayStrategy` 迁移到 `builtin_strategies/threshold_intraday.py`，并由 `builtin_strategies/__init__.py` 统一导出。
+- 完成：`src/xtrader/strategies/intraday.py` 改为兼容导出层；`strategies/__init__.py` 与 `strategies/builtin.py` 更新为从新目录导入。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/strategies tests/unit/backtests`（28 passed）；`PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（48 passed）。
+- TODO：后续新增策略统一放入 `builtin_strategies/`，`intraday.py` 仅保留兼容层角色。
+
+### 2026-03-29 21:05-21:25 CST
+- 完成：增强 `write_event_driven_outputs`，新增 `event_driven_report.html` 可视化报告（K线图、入场/出场标注、权益曲线、逐笔交易表）。
+- 完成：保持原有落盘产物不变（`summary.json/trades.csv/equity_curve.csv/event_driven_report.md`），并新增 `html_report_path` 返回字段。
+- 完成：新增可选参数 `price_frame` 用于渲染 K 线；无价格数据时页面给出空状态提示，不影响旧调用。
+- 测试：`PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（6 passed）；`PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（48 passed）。
+- TODO：下一步可在 HTML 中补“多周期信号轨道”（signal_tf/exec_tf 双面板）与单笔交易回放切换。
+
+### 2026-03-29 21:25-21:45 CST
+- 完成：继续增强事件回测可视化复盘，补齐“多周期信号/执行时间轴 + 单笔交易回放筛选”。
+  1. `src/xtrader/backtests/event_driven.py`
+     - `write_event_driven_outputs` 新增可选参数：`actions`、`signal_interval_ms`。
+     - HTML 报告新增 `Signal vs Execution Timeline` 面板，区分 signal timeframe 与 execution timeframe。
+     - 新增 `Replay Trade` 下拉筛选器，通过 `data-trade-id` 联动 K 线标注与交易账本高亮。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 更新 smoke test，断言 HTML 中包含时间轴与回放筛选器关键元素。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（6 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（48 passed）。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 下一步可补“时间窗口缩放（近 N 笔交易）”与“交易详情 hover 卡片”，提升复盘效率。
+
+### 2026-03-29 21:45-22:05 CST
+- 完成：继续实现回放交互增强，补齐“窗口聚焦 + hover 详情卡片”。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 在 `Replay Trade` 控件中新增 `Window Bars`，按选中交易自动聚焦前后 N 根 K 线（SVG viewBox 缩放）。
+     - 新增 `tradeDetails` 卡片，支持筛选和鼠标悬停联动，展示交易时间、价格、数量、成本拆解与 `exit_reason`。
+     - 新增回放上下文构建：`trade_bars`（entry/exit bar index）与 `trade_details`（逐笔详情）并注入前端脚本。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 扩展 HTML smoke 断言，覆盖 `windowBars` 与 `tradeDetails` 关键元素。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（6 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（48 passed）。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 后续可补“固定时间窗口与自动跟踪最新交易”两种回放模式切换。
+
+### 2026-03-29 22:05-22:20 CST
+- 完成：按用户反馈优化 report HTML 的可读性与时间轴可解释性。
+  1. `src/xtrader/backtests/event_driven.py`
+     - K 线交易标注：将 Entry 区域从整块半透明蓝色覆盖改为“入场->出场细虚线连接”，避免遮挡蜡烛图。
+     - 时间轴面板：新增图例说明（Signal 点、Execution 点、lag 虚线）与 `timelineDetails` 详情卡片。
+     - 时间轴交互：hover 任意 timeline event，显示 `action/reason/signal_time/execution_time/lag`。
+  2. 重新生成样例报告：
+     - `reports/backtests/XTR-011/20260329T135454Z_demo_trades_v2/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（6 passed）。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 后续可补时间轴“按 action 类型筛选/折叠 HOLD”以减少噪音。
+
+### 2026-03-29 22:20-22:30 CST
+- 完成：按用户确认整理“长周期报告优化（1/2/3/4 + 本地静态服务器）”需求，不做实现仅完成需求收敛。
+  1. 更新 `docs/specs/XTR-011.md`：
+     - 新增 Phase D：Trade Ledger 分页/虚拟化、分片按需自动加载、时间范围联动、长周期聚合与单笔放大视图。
+     - 明确 local static server 模式与 `file://` 降级提示要求。
+  2. 更新 `docs/validation/XTR-011.md`：
+     - 新增长周期性能、分片加载、联动与本地静态服务器验证项（待执行）。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 下一步进入实现：优先落地分页/虚拟化 + manifest/chunks 自动加载骨架。
+
+### 2026-03-29 22:30-22:55 CST
+- 完成：继续推进 Phase D 骨架实现与实数验证，完成 Trade Ledger 分片按需加载 + 分页，并补充本地静态服务器提示。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 新增长周期分片输出：`trade_ledger_manifest.json` + `chunks/trades_YYYY_MM.json`。
+     - `write_event_driven_outputs` 在交易数超过阈值时自动启用 chunked ledger，并在返回值中给出 `ledger_manifest_path`。
+     - HTML 报告新增：
+       - `file://` 模式警示（提示使用 `python -m http.server`）
+       - `Range` 控件（30D/90D/1Y/ALL/CUSTOM）
+       - Trade Ledger 分页控件（page size + prev/next）
+       - 前端自动加载 `manifest/chunks` 并按时间范围过滤
+     - manifest 增加 `total_trades` 字段，便于验收与监控。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 新增/更新 chunked ledger 测试，校验 manifest/chunk 输出与 HTML 占位组件。
+     - 增加 `total_trades` 断言。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（7 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（49 passed）。
+  3. 真实 3 年数据回测（BTCUSDT 5m）：
+     - 输出目录：`reports/backtests/XTR-011/20260329T142915Z_real3y_chunked/`
+     - `bars=315649`，`trades=65660`
+     - `event_driven_report.html=38,947,679 bytes`
+     - `chunks=37`，chunk 总大小 `24,328,516 bytes`
+- 补充：范围预设新增 `7D`（原有 `30D/90D/1Y/ALL/CUSTOM`），与 XTR-011 Phase D R3 保持一致。
+- 补充：重新生成最新报告（含 `7D` 与 `total_trades`）：
+  - `reports/backtests/XTR-011/20260329T143602Z_real3y_chunked_v2/`
+  - `event_driven_report.html=38,947,783 bytes`，`manifest.total_trades=65660`，`chunks=37`
+- 关联任务：`XTR-011`。
+- TODO：
+  1. Phase D 下一步补齐 R3/R4：范围过滤联动到 K 线/时间轴/权益曲线，以及长周期聚合视图与 trade spotlight。
+
+### 2026-03-29 22:55-23:20 CST
+- 完成：落地 Phase D R3（时间范围跨面板联动），`Range` 从仅 Ledger 过滤升级为同步驱动 K 线 / Timeline / Equity / Ledger。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 新增 `_build_dashboard_time_bounds`，注入前端统一时间边界。
+     - `klineSvg/timelineSvg/equitySvg` 增加 `id + data-*` 图元元信息，前端统一 `viewBox` 时间缩放。
+     - `setPresetRange` 支持非 chunked 模式，`rangePreset/applyRange` 在 chunked 与非 chunked 都可触发联动。
+     - 非 chunked Trade Ledger 行增加 `data-entry-ms/data-exit-ms`，随 Range 同步过滤。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 增加 HTML 回归断言：`timelineSvg`、`equitySvg`、`7D` 预设项。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（7 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（49 passed）。
+  3. 真实 3 年数据回测：
+     - 首次产物 `20260329T144711Z_real3y_chunked_v3` 因交易标注属性冗余，HTML 升至 `58,443,373 bytes`（发现性能回退）。
+     - 移除冗余属性后重跑产物 `20260329T145008Z_real3y_chunked_v4`，HTML 回到 `39,073,673 bytes`，`trade_count=65660`，`chunk_count=37`。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. Phase D 下一步补齐 R4：长周期聚合视图与 trade spotlight（单笔放大）模式切换。
+
+### 2026-03-29 23:20-23:35 CST
+- 完成：继续推进 Phase D R4 与可用性细节。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 新增 `Kline Mode`：`Range / Trade Spotlight`。
+     - 新增自动聚合概览 K 线（5m/1h/4h/1d 自动选取，目标 bars<=1200）与 `Overview TF` 标签。
+     - 新增交易标注上限 `_KLINE_TRADE_MARKER_MAX=1500`，避免长周期下 SVG 膨胀。
+     - 新增 `file://` 提示区 `Copy Command` 按钮（复制 `python -m http.server 8000`）。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 增加回归断言：`klineMode` 与 `copyServerCmd`。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（7 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（49 passed）。
+  3. 真实 3 年数据回测：
+     - 产物：`reports/backtests/XTR-011/20260329T150148Z_real3y_chunked_v5/`
+     - `event_driven_report.html=6,417,817 bytes`（对比 v4 的 `39,073,673 bytes` 再降 83.58%）
+     - `trade_count=65660`，`chunk_count=37`，`manifest.total_trades=65660`
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 下一步可将 Timeline 的 `HOLD` 默认折叠（减少噪音），并加 action type filter。
+
+### 2026-03-29 23:35-23:50 CST
+- 完成：实现“报告总览页（Hub）”，支持多报告统一浏览与自动更新。
+  1. `src/xtrader/backtests/event_driven.py`
+     - `write_event_driven_outputs` 自动更新：
+       - `report_hub_index.json`
+       - `report_hub.html`
+     - 新增历史报告自动发现（扫描同目录下已有报告目录），Hub 不只显示新生成报告。
+     - Hub 页面支持：
+       - 自动刷新（5s/15s/60s）
+       - 搜索（run_id/symbol）
+       - 一键跳转 `report/summary/trades`
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 新增 Hub 相关测试：
+       - 产物存在与索引注册
+       - 多报告累积
+       - 历史目录自动发现
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（51 passed）。
+  3. 运行 hub bootstrap：
+     - 生成：`reports/backtests/XTR-011/report_hub.html`
+     - 生成：`reports/backtests/XTR-011/report_hub_index.json`
+     - 收录：`report_count=10`
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 后续可在 Hub 增加“按策略名/参数标签”分组（目前主要按 run_id + symbol 检索）。
+
+### 2026-03-29 23:50-23:58 CST
+- 完成：新增静态服务管理命令，支持对话中直接“开启/停止/查看状态”。
+  1. 新增 `scripts/report_server.py`
+     - 子命令：`start/stop/status/restart`
+     - 维护状态文件：`.cache/report_server.json`
+     - 日志文件：`.cache/report_server.log`
+     - 启动后输出 URL 与 Hub 地址；启动失败时输出可读错误与日志路径
+  2. 更新 `README.md`
+     - 增加 `Report Hub Static Server` 用法（含端口与目录参数示例）
+- 验证：
+  1. `python -m py_compile scripts/report_server.py`（通过）。
+  2. 本环境执行 `start` 因端口绑定受限触发 `PermissionError`，脚本按预期返回失败信息且状态未污染。
+- 关联任务：`XTR-011`。
+- TODO：
+  1. 若需要可后续补一个 `make report-server-start/stop/status` 别名层，进一步简化命令输入。
+
+### 2026-03-29 23:58-00:00 CST
+- 完成：针对用户反馈“`Kline + Trades` 区域不可见”做可见性优化。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 将 `Range` 默认预设由 `7D` 调整为 `ALL`，避免首次打开时视窗过窄导致“看起来空白”。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 增加断言：`<option value='ALL' selected>ALL</option>`。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. `PYTHONPATH=src pytest -q tests/unit/data tests/unit/strategies tests/unit/backtests tests/unit/exchanges/test_bitget_client.py`（51 passed）。
+  3. 新产物：`reports/backtests/XTR-011/20260329T154607Z_real3y_chunked_v6/event_driven_report.html`（默认 `ALL` 已生效）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 01:00-01:12 CST
+- 完成：将 `Kline + Trades` 升级为第三方图表渲染（ECharts），并保留 SVG 兜底。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 报告页新增 ECharts 脚本与 `klineEchart` 容器，K 线优先由 ECharts 渲染。
+     - 新增 `_build_kline_chart_payload`，输出 `bars/trades` 前端 payload（含 entry/exit 索引与价格）。
+     - 新增 `renderKlineEchart` 逻辑，支持：
+       - Range 联动缩放
+       - Spotlight 模式按单笔交易放大
+       - 交易标记抽样与点击 marker 反选 `Replay Trade`
+     - 修复 trade_id 一致性：`_build_trade_replay_payload` 与 `_build_candlestick_svg` 在截断尾部后仍保持全局 trade_id，不再重编号。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 增加回归断言：`klineEchart` 容器、ECharts CDN、`klinePayload` 与 `renderKlineEchart` 逻辑存在。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. 基于 `20260329T154607Z_real3y_chunked_v6` 复建新报告（真实 BTCUSDT 本地 K 线）：
+     - `reports/backtests/XTR-011/20260329T170943Z_real3y_echarts_kline_v1/event_driven_report.html`
+     - Hub 自动更新：`reports/backtests/XTR-011/report_hub.html`
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 01:12-01:36 CST
+- 完成：修复 ECharts 版 Kline 的两类可用性问题（交易点聚堆、Range 缩放异常）。
+  1. `src/xtrader/backtests/event_driven.py`
+     - Kline dataZoom 从 `startValue/endValue` 改为百分比 `start/end`，避免类目轴在长周期下误判导致“仅一根K线”。
+     - 交易 marker 坐标由 `[bar_index, price]` 改为 `[bar_time, price]`，与类目轴时间对齐，修复 marker 偏移到右侧的问题。
+     - `kline_payload` 交易元数据改为“全周期均匀抽样”上限 `_KLINE_CHART_TRADE_META_MAX=8000`，避免只取尾部造成“全在右边”，同时控制 HTML 体积。
+     - 优化 `_nearest_bar_index`：由重复 `np.searchsorted(np.array(...))` 改为 `bisect_left`，降低大样本映射开销。
+  2. 新产物：
+     - `reports/backtests/XTR-011/20260329T173315Z_real3y_echarts_kline_v3_sampled/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. 关键前端片段核对：新报告含 `start: leftPct`、marker 按时间值映射逻辑。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 01:36-01:47 CST
+- 完成：修复 ECharts 在页面加载后容器宽度异常导致 K 线“缩到左侧”的问题。
+  1. `src/xtrader/backtests/event_driven.py`
+     - `klineEchart` 容器由 `display:none` 调整为 `visibility:hidden`，避免初始化时宽度为 0。
+     - 初始化顺序调整为“先显示容器，再 `echarts.init`”。
+     - 新增 `safeResize` + `requestAnimationFrame` + `setTimeout` 双重 resize。
+     - 新增 `ResizeObserver` 监听容器尺寸变化自动触发 chart resize。
+  2. 新产物：
+     - `reports/backtests/XTR-011/20260329T174538Z_real3y_echarts_kline_v4_resize_fix/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. 新报告包含 `ResizeObserver` 与延迟 resize 逻辑，HTML 成功落盘（约 7.5MB）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 02:00-02:17 CST
+- 完成：按用户反馈升级 ECharts 交互逻辑，聚焦 5m 原始K线、10天窗口约束与同轴叠加。
+  1. `src/xtrader/backtests/event_driven.py`
+     - `dashboard prices` 改为保留原始时间粒度，不再自动降采样为日线。
+     - `Range` 预设改为 `1D/3D/7D/10D/CUSTOM`，移除 `ALL`，并在前端统一约束 `CUSTOM` 最大跨度 10 天（超限自动截断并提示）。
+     - ECharts x 轴改为 `time`，交易 marker 统一使用毫秒时间戳坐标，修复标注错位。
+     - 新增同图叠加：
+       - `Equity Overlay`（右侧 y 轴线图）
+       - `Signal/Execution Overlay`（事件散点）
+       - 通过复选框按钮显隐。
+     - 新增窗口内最大 K 线数约束（默认约 2900）以保证交互稳定。
+     - 为防止 SVG fallback 在超大数据上卡顿，加入 fallback bars 上限逻辑。
+  2. 数据 payload 优化
+     - 新增 `equity/events` payload，交易/权益/事件均带上限抽样，兼顾时序覆盖与体积。
+  3. 测试
+     - `tests/unit/backtests/test_event_driven.py` 更新断言（新 range 选项与 overlay 控件）。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. 新产物：`reports/backtests/XTR-011/20260329T181540Z_real3y_echarts_kline_v5_5m_overlay/event_driven_report.html`（约 27MB）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 02:17-02:34 CST
+- 完成：修复“overlay/标注不随时间轴缩放移动 + 价格Y轴不随窗口重算”的关键交互问题。
+  1. `src/xtrader/backtests/event_driven.py`
+     - ECharts `dataZoom.filterMode` 改为 `filter`，让价格轴按当前可见窗口自动重算。
+     - 价格 y 轴新增 `min/max` 动态 padding，提升K线高低波动可读性。
+     - 交易标注/Equity/Signal 不再按固定 `range` 预筛选，避免缩放后“锁在初始窗口”。
+     - `Signal/Execution` 在无 actions 数据时，新增基于 `trades` 的 fallback 事件（`ENTER_*` / `EXIT`），保证 overlay 可见。
+  2. 新产物：
+     - `reports/backtests/XTR-011/20260329T183143Z_real3y_echarts_kline_v6_overlay_fix/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. 新报告包含：
+     - `type: "time"` x 轴
+     - `filterMode: "filter"`
+     - `signalDots/executionDots` 与 fallback 事件数据。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 02:34-02:52 CST
+- 完成：修复 ECharts 报告中“Range 不生效、标注/权益与时间轴不同步、Signal 可见性弱、Y 轴可读性差”的问题。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 增加 `datazoom` 事件监听：图内缩放/平移会反向同步到 Range 状态与输入框（`CUSTOM`），并刷新 SVG 面板时间窗口。
+     - 强化 10 天约束：图内缩放超过 10 天时自动截断并同步回图表。
+     - 交易标注改为优先使用 `entry_ms/exit_ms` 时间戳定位，避免依赖索引导致缩放后偏移/堆积。
+     - Range 应用改为显式 `dispatchAction(dataZoom)`，确保窗口切换立即生效。
+     - 价格轴改为按当前可视窗口计算 `min/max`（含 padding），提升 K 线高度可读性。
+     - 新增价格轴纵向缩放能力（`insideYZoom` + `sliderYZoom`，按住 `Shift + 滚轮`）。
+     - 提升叠加层可见性：Signal/Execution 点放大并提高层级，右侧 Equity 轴标签格式化，图表右侧留白加大避免截断。
+  2. 验证样例报告：
+     - `reports/backtests/XTR-011/20260330T023500Z_overlay_sync_fix_demo/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+  2. `python -m compileall src/xtrader/backtests/event_driven.py`（通过）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:00-03:10 CST
+- 完成：按用户指示切换为“纯 K 线修复模式”，临时移除 Kline 图中的所有非 K 线叠加。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 去掉 Kline 面板中的 `Equity Overlay` / `Signal/Execution Overlay` 勾选控件。
+     - 去掉 Kline 图例中的 Entry/Exit 标注项。
+     - ECharts Kline 改为稳定的 `category + OHLC` 数据结构：
+       - `xAxis.type='category'`（时间戳分类）
+       - `series.candlestick.data=[open, close, low, high]`
+       - 移除旧的 `encode` 方式与多轴叠加系列。
+     - Kline 图仅保留 `candlestick` 主序列，移除 marker/equity/signal/execution 系列。
+     - 保留并修正 Range 缩放联动：内部使用百分比 `start/end`，避免类别轴下 `startValue/endValue` 语义偏差。
+  2. 新验证报告：
+     - `reports/backtests/XTR-011/20260330T031000Z_kline_only_fix/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（9 passed）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:10-03:18 CST
+- 完成：修复 K 线“斜条纹/退化线段”显示问题（数据侧可视化退化处理）。
+  1. `src/xtrader/backtests/event_driven.py`
+     - 在 `_prepare_dashboard_prices` 增加可视化退化检测：当 OHLC 缺失或 `open==close` 比例极高（`>=0.995`）时，自动使用前一根 `close` 合成 `open`，并重算 `high/low`（仅用于报告展示，不影响回测成交与PnL）。
+     - 新增常量 `_DASHBOARD_DOJI_SYNTH_THRESHOLD = 0.995`。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 新增 `test_prepare_dashboard_prices_synthesizes_visual_ohlc_for_degenerate_doji_stream`，锁定退化K线合成行为。
+  3. 新验证报告：
+     - `reports/backtests/XTR-011/20260330T032000Z_kline_only_fix_v2/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（10 passed）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:18-03:22 CST
+- 完成：按用户要求使用本地真实 BTCUSDT 5m 数据重跑纯 K 线报告（不含 Marker/Overlay）。
+  1. 数据源：`data/klines/bitget/linear_swap/BTCUSDT/5m/2026/03.parquet`
+  2. 时间窗：`2026-03-20T00:00:00Z` ~ `2026-03-22T23:55:00Z`
+  3. 新报告：`reports/backtests/XTR-011/20260330T032800Z_real_btc_5m_kline_only/event_driven_report.html`
+  4. 现场校验：
+     - 输入价格 `open==close` 比例：`0.003472...`（非 100%）
+     - 报告 payload `open==close` 比例：`0.003472...`（与输入一致）
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:22-03:27 CST
+- 完成：按用户要求临时移除报告中的 `Signal vs Execution Timeline` 与 `Equity Curve`，先聚焦 K 线修复。
+  1. `src/xtrader/backtests/event_driven.py`
+     - HTML 模板删除 Timeline/Equity 两个 panel（仅保留 Kline + Trade Ledger）。
+     - 同步移除对应模板片段构建（`signal_svg/equity_svg/timeline_help_html/timeline_details_html`）。
+     - 增加 ECharts 降级处理：当 `window.echarts` 不可用时，`#klineEchart` 设为 `display:none`，避免顶部空白占位。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 更新断言：HTML 不再包含 `Signal vs Execution Timeline`、`timelineSvg`、`equitySvg`。
+  3. 真实数据重跑报告：
+     - `reports/backtests/XTR-011/20260330T033000Z_real_btc_5m_kline_only_no_timeline_equity/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（10 passed）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:27-03:32 CST
+- 完成：按用户要求“只保留 ECharts K 线显示，取消原有 SVG 显示”。
+  1. `src/xtrader/backtests/event_driven.py`
+     - Kline panel 模板移除 `{candle_svg}`，页面不再注入 `klineSvg` 节点。
+     - 去除 Kline 渲染中的 SVG fallback 回退分支，仅保留 ECharts 渲染路径。
+     - 保留 ECharts 不可用时隐藏 `#klineEchart` 的降级逻辑（避免空白占位）。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 新增断言：报告 HTML 不包含 `id="klineSvg"`。
+  3. 真实数据重跑报告：
+     - `reports/backtests/XTR-011/20260330T033800Z_real_btc_5m_echart_only/event_driven_report.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（10 passed）。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:39-03:41 CST
+- 完成：按用户要求重跑“仅 ECharts K 线、无交易”验证报告（真实 BTCUSDT 合约 5m，过去 3 年）。
+  1. 数据源：`data/klines/bitget/linear_swap/BTCUSDT/5m/**/*.parquet`（本地真实数据）。
+  2. 时间窗：以可用数据末端回溯 3 年，实际为 `2023-03-25T23:55:00Z` ~ `2026-03-25T23:55:00Z`。
+  3. 新报告：`reports/backtests/XTR-011/20260329T194018Z_real_btc_5m_3y_echart_only_notrades_v2/event_driven_report.html`。
+  4. 校验：`klinePayload.bars=315649`，`trade_count=0`，`open==close ratio=0.004232549445745116`。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:42-03:46 CST
+- 完成：将事件回测报告 ECharts 从 CDN 改为本地离线资产，确保不依赖外网。
+  1. 新增本地 vendor 资产：`src/xtrader/backtests/assets/echarts.min.js`（ECharts 5.4.1）。
+  2. `src/xtrader/backtests/event_driven.py`
+     - 新增 `_copy_local_echarts_asset`，在每次 `write_event_driven_outputs` 时复制 `echarts.min.js` 到当次报告目录。
+     - HTML 脚本引用改为本地：`<script src="./echarts.min.js"></script>`。
+     - 输出字段新增：`echarts_asset_path`。
+  3. `tests/unit/backtests/test_event_driven.py`
+     - 断言从 CDN 改为本地脚本引用。
+     - 新增断言：`echarts.min.js` 落盘存在，且 `outputs['echarts_asset_path']` 正确返回。
+  4. 真实数据复跑离线报告（BTCUSDT 合约 5m，过去 3 年，trade_count=0）：
+     - `reports/backtests/XTR-011/20260329T194553Z_real_btc_5m_3y_echart_only_offline/event_driven_report.html`
+     - 同目录自动生成 `echarts.min.js`。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py`（10 passed）。
+  2. `python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 03:52-03:55 CST
+- 完成：按用户需求改造报告服务，`start/restart` 前自动重建 `report_hub_index.json`，确保索引与文件系统一致。
+  1. 代码：`scripts/report_server.py`
+     - 新增 `backtests/*` 扫描与索引重建逻辑（仅收录实际存在 `summary.json + event_driven_report.html` 的目录）。
+     - `start` 流程在启动 HTTP 服务前执行重建。
+  2. 现场验证：
+     - 向 `reports/backtests/XTR-011/report_hub_index.json` 人工注入假条目 `FAKE_SHOULD_BE_REMOVED`。
+     - 执行 `python scripts/report_server.py restart` 后，假条目被自动清除（`fake_present=False`）。
+- 验证：
+  1. `python -m py_compile scripts/report_server.py` 通过。
+  2. `python scripts/task_guard.py check XTR-011` 通过。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 04:00-04:02 CST
+- 完成：移除报告服务中的任务号硬编码（`XTR-011`），改为动态发现 `backtests/*/report_hub.html`。
+  1. 代码：`scripts/report_server.py`
+     - 新增 `_discover_hub_paths` 与 `_print_hub_hints`。
+     - `start/status` 输出 Hub 地址不再固定任务号，按当前目录自动展示。
+- 验证：
+  1. `python -m py_compile scripts/report_server.py` 通过。
+  2. `python scripts/report_server.py status` 输出正常。
+- 关联任务：`XTR-011`。
+
+### 2026-03-30 04:03-04:10 CST
+- 完成：实现策略回测报告目录按策略名分层（`XTR-012`）。
+  1. 新增策略目录入口（`src/xtrader/backtests/event_driven.py`）：
+     - `build_strategy_report_root`：标准目录 `reports/backtests/<strategy_slug>/<run_id>/`
+     - `write_strategy_event_driven_outputs`：策略语义输出封装，内部复用 `write_event_driven_outputs`
+     - `run_id` 规范：`YYYYMMDDTHHMMSSZ_<strategy_slug>[_<suffix>]`
+  2. 导出更新：`src/xtrader/backtests/__init__.py` 新增上述两个接口导出。
+  3. 测试更新：`tests/unit/backtests/test_event_driven.py`
+     - 新增 `test_strategy_scoped_report_root_and_outputs`
+     - Hub 相关测试路径从任务号目录改为策略目录示例 `threshold_intraday`
+  4. 文档更新：`README.md` 默认 Hub 链接改为策略分层路径示意。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `11 passed`
+  2. `python -m py_compile scripts/report_server.py` 通过
+  3. `python scripts/task_guard.py check XTR-012` 通过
+- 关联任务：`XTR-012`。
+
+### 2026-03-30 04:20-04:26 CST
+- 完成：按用户明确要求修正策略回测报告目录层级。
+  1. 目标结构改为：
+     - `reports/backtests/strategy/report_hub.html`
+     - `reports/backtests/strategy/report_hub_index.json`
+     - `reports/backtests/strategy/<strategy_slug>/<run_id>/...`
+  2. 代码调整：
+     - `src/xtrader/backtests/event_driven.py`
+       - `_DEFAULT_STRATEGY_BACKTEST_ROOT` 改为 `reports/backtests/strategy`
+       - `write_strategy_event_driven_outputs` 将 hub 集合根固定为 `report_base`
+       - `write_event_driven_outputs` 新增可选 `collection_root`
+       - Hub 发现与链接生成改为支持递归目录，链接使用相对路径 `<strategy_slug>/<run_id>/...`
+     - `scripts/report_server.py`
+       - 重建 `report_hub_index.json` 改为递归扫描报告目录，支持二级结构。
+  3. 测试与文档：
+     - 更新 `tests/unit/backtests/test_event_driven.py` 对新路径结构断言。
+     - 更新 `README.md` Hub 默认入口：`/backtests/strategy/report_hub.html`。
+     - 更新 `docs/specs/XTR-012.md` 与 `docs/validation/XTR-012.md` 的路径口径。
+  4. 冒烟产物：
+     - `reports/backtests/strategy/threshold_intraday/20260329T202428Z_threshold_intraday/`
+     - `reports/backtests/strategy/report_hub.html`
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `11 passed`
+  2. `python -m py_compile scripts/report_server.py` 通过
+  3. `python scripts/task_guard.py check XTR-012` 通过
+- 关联任务：`XTR-012`。
+
+### 2026-03-30 13:12-13:19 CST
+- 完成：落实“snapshot 机制始终开启（无开关）”的可复现保障，并补充回归校验。
+  1. 代码行为（`src/xtrader/backtests/event_driven.py`）：
+     - 回测结果对象携带输入快照：`price_input_snapshot`、`action_input_snapshot`。
+     - 报告写出阶段固定生成：
+       - `snapshots/price_input.parquet`
+       - `snapshots/action_input.parquet`
+       - `snapshots/snapshot_manifest.json`
+     - manifest 记录 row 数、时间范围、sha256 哈希。
+  2. 测试强化（`tests/unit/backtests/test_event_driven.py`）：
+     - 在 report smoke case 增加 snapshot 文件存在性断言。
+     - 校验 `outputs` 返回的 snapshot 路径字段。
+     - 校验 `snapshot_manifest.json` 中 row/hash 与真实文件一致。
+     - 在可复现用例中新增快照 DataFrame 一致性断言。
+  3. 文档同步：
+     - `docs/specs/XTR-012.md` 增加“snapshot 固定落盘”Requirement/Acceptance。
+     - `docs/validation/XTR-012.md` 增加对应验证项与执行记录。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `11 passed`
+  2. `python scripts/task_guard.py check XTR-012` -> 通过
+- 关联任务：`XTR-012`。
+
+### 2026-03-30 14:18-14:22 CST
+- 完成：围绕“回测与报告解耦 + 离线 UI（manifest 单入口）”冻结新需求，并启动 Spec/Validation 流程。
+  1. 创建任务：`XTR-013`
+     - `docs/specs/XTR-013.md`
+     - `docs/validation/XTR-013.md`
+  2. Spec 关键点：
+     - 回测程序移除旧报告生成功能（不再产出 `event_driven_report.*`、`report_hub.*`）。
+     - 旧历史报告不迁移、不转换。
+     - 规范标准 run 产物与 `run_manifest.json` 单入口加载。
+     - UI 展示与交互要求：K线、Trade Ledger、Equity、Signal/Execution Timeline，同 UTC X 轴联动，K线动态 Y 轴。
+  3. Validation 关键点：
+     - 先完成守门校验；结构验收、manifest 验收、UI 验收留待开发后执行。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-013` -> 通过
+- 关联任务：`XTR-013`。
+
+### 2026-03-30 14:26-14:29 CST
+- 完成：补充 XTR-013 中“5m 基础数据 + 多周期重采样快照”规范。
+  1. Spec 更新（`docs/specs/XTR-013.md`）：
+     - 明确基础最小周期固定 5m。
+     - 对使用 15m/1H/1D 等更大周期的策略，要求将重采样结果落盘。
+     - 产物结构更新为：
+       - `snapshots/base/price_5m.parquet`
+       - `snapshots/resampled/price_<tf>.parquet`
+       - `snapshots/resampled/resampled_manifest.json`
+     - 要求 `resampled_manifest.json` 记录来源、聚合规则、时区/闭合口径、hash 与时间范围。
+  2. Validation 更新（`docs/validation/XTR-013.md`）：
+     - 新增“重采样快照验收”验证项。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-013` -> 通过
+- 关联任务：`XTR-013`。
+
+### 2026-03-30 14:39-14:45 CST
+- 完成：补充 XTR-013 中“大数据量 UI 展示优化”细化要求，覆盖 30 万级 K线与万级交易场景。
+  1. Spec 更新（`docs/specs/XTR-013.md`）：
+     - 增加视窗优先加载（默认窗口，不全量首屏加载）。
+     - 增加分块读取与 chunk manifest 约束。
+     - 增加 K线像素预算规则、LOD 切换与桶聚合要求。
+     - 增加 Equity 降采样、Timeline 聚合/明细双模式要求。
+     - 增加 Trade Ledger 虚拟滚动/分页要求。
+     - 增加大数据样例下可响应性验收条款。
+  2. Validation 更新（`docs/validation/XTR-013.md`）：
+     - 新增大数据可视化验收、Trade Ledger 性能验收、Timeline 聚合验收项。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-013` -> 通过
+- 关联任务：`XTR-013`。
+
+### 2026-03-30 14:46-14:52 CST
+- 完成：启动 XTR-013 实现（第一阶段：回测输出解耦与标准化落盘）。
+  1. `src/xtrader/backtests/event_driven.py`
+     - `write_event_driven_outputs` 改为“纯数据产物”输出：
+       - 新增 `run_manifest.json`、`diagnostics.json`、`timelines/signal_execution.parquet`。
+       - 保留并扩展交易/权益落盘（csv + parquet）。
+       - 移除旧报告生成链路（不再写 `event_driven_report.html/.md`、不再更新 `report_hub.*`）。
+     - snapshot 落盘结构升级为：
+       - `snapshots/base/price_5m.parquet`
+       - `snapshots/action_input.parquet`
+       - `snapshots/snapshot_manifest.json`
+       - `snapshots/resampled/price_<tf>.parquet`
+       - `snapshots/resampled/resampled_manifest.json`
+     - 支持可选 `resampled_price_frames` 输入，并写入 run manifest 的重采样时间框列表。
+  2. `tests/unit/backtests/test_event_driven.py`
+     - 将旧 HTML/Hub 断言迁移为数据产物断言。
+     - 新增/调整校验：
+       - `run_manifest`、`diagnostics`、`signal_execution` 产物存在性与内容。
+       - 5m 基础快照与 15m/1h 重采样快照及 manifest 落盘。
+       - 旧 `event_driven_report.*` 与 `report_hub.*` 不再生成。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `11 passed`
+  2. `python scripts/task_guard.py check XTR-013` -> 通过
+- 关联任务：`XTR-013`。
+
+### 2026-03-30 14:58-15:08 CST
+- 完成：推进 `XTR-013` 第二阶段实现并修复回归。
+  1. 修复 `tests/unit/backtests/test_event_driven.py` 中 ledger manifest 断言（改为校验 run manifest 相对路径）。
+  2. 新增离线查看器初始化模块 `src/xtrader/backtests/offline_viewer.py`，支持一键复制 `offline_report_viewer.html` 与本地 `echarts.min.js`。
+  3. 新增脚本 `scripts/offline_report_viewer.py`（`init` 子命令，默认输出到 `reports/backtests/viewer/`）。
+  4. 新增测试 `tests/unit/backtests/test_offline_viewer.py`（模块复制与脚本初始化）。
+  5. 更新导出 `src/xtrader/backtests/__init__.py`（新增 `initialize_offline_report_viewer`）。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/backtests/test_offline_viewer.py` -> `13 passed`
+  2. `python -m py_compile src/xtrader/backtests/event_driven.py src/xtrader/backtests/offline_viewer.py scripts/offline_report_viewer.py` -> 通过
+- TODO：
+  1. 按 XTR-013 继续完善离线 UI 的大数据加载策略（chunk/按视窗加载/聚合切换）。
+  2. 视需要清理 `event_driven.py` 中遗留的旧报告私有函数，进一步收敛职责边界。
+
+### 2026-03-30 15:24-15:31 CST
+- 完成：继续 `XTR-013`（处理中断后续），补齐离线查看器的大数据加载闭环。
+  1. 修复 `offline_report_viewer.html` 运行时缺陷：补充 `withinWindow`，避免选择目录后脚本报错中断。
+  2. 接通 `chunk_sets` 加载链路：优先读取 `chunks/*/manifest.json` 并按时间窗增量加载；缺失时回退 CSV。
+  3. 默认窗口改为真正“视窗优先”读取：范围切换时重新按窗口加载数据，而非全量常驻。
+  4. Timeline 增加双模式：大窗口聚合计数（bar/line），小窗口展示 signal/execution 明细连线。
+  5. 扩展单测 `tests/unit/backtests/test_offline_viewer.py`，新增关键脚本片段断言（防回退）。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_offline_viewer.py tests/unit/backtests/test_event_driven.py` -> `13 passed`
+  2. `python scripts/task_guard.py check XTR-013` -> 通过
+- 关联任务：`XTR-013`。
+- TODO：
+  1. 继续执行 `XTR-013` 的人工 UI 验收与大样本性能验收（Validation 中未勾选项）。
+  2. 评估并清理 `event_driven.py` 中遗留旧报告私有函数，进一步收敛边界。
+
+### 2026-03-30 16:43-16:47 CST
+- 完成：启动并落地 `XTR-014` 的 Spec/Validation 流程（Parquet-only 报告产物）。
+  1. 创建任务资产：`python scripts/task_guard.py new XTR-014 --title "回测报告UI支持Parquet并移除CSV输出"`。
+  2. 编写 Spec：`docs/specs/XTR-014.md`，明确 UI 读取 Parquet、移除 CSV 输出、manifest/索引切换、风险与验收标准。
+  3. 编写 Validation：`docs/validation/XTR-014.md`，定义结构验收、Manifest/索引验收、UI 功能验收、数据一致性与异常场景验收。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-014` -> 通过（两次复核均通过）。
+- 关联任务：`XTR-014`。
+- 状态：待用户确认 Spec/Validation 后进入开发实现。
+
+### 2026-03-30 16:50-16:53 CST
+- 完成：更新 `XTR-014` Spec/Validation，明确“Parquet 改造不影响既有 UI 显示能力”。
+  1. `docs/specs/XTR-014.md`：补充不退化要求（`5m/15m/1h/4h/1d`、窗口内 OHLC 桶聚合、交易标注与联动、Timeline 聚合/明细）。
+  2. `docs/specs/XTR-014.md`：补充实现边界（优先改读取层，尽量不改渲染/联动层）。
+  3. `docs/validation/XTR-014.md`：新增 UI 回归验收项并补充执行日志。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-014` -> 通过。
+- 关联任务：`XTR-014`。
+
+### 2026-03-30 17:00-17:10 CST
+- 完成：实现 `XTR-014`（Parquet-only 报告产物 + UI Parquet 读取）。
+  1. 回测输出链路（`src/xtrader/backtests/event_driven.py`）
+     - 移除 `trades.csv`、`equity_curve.csv`、`timelines/signal_execution.csv`、`snapshots/base/price_5m.csv`、`snapshots/action_input.csv` 写出。
+     - `snapshot_manifest.json` 去除 CSV 条目，仅保留 Parquet 条目。
+     - chunk 文件从 `*.csv` 切换为 `*.parquet`。
+     - run manifest artifact 不再包含 CSV 路径。
+  2. 离线 UI（`src/xtrader/backtests/assets/offline_report_viewer.html`）
+     - 接入 `hyparquet`，实现浏览器侧 Parquet 读取。
+     - chunk 与 fallback 全部切换到 Parquet。
+     - 保持 K线桶聚合、交易标注/联动、Timeline 聚合/明细逻辑不变。
+  3. 离线初始化（`src/xtrader/backtests/offline_viewer.py`、`scripts/offline_report_viewer.py`）
+     - 新增复制 `vendor/hyparquet` 资产到 viewer 输出目录。
+  4. 索引路径更新（`scripts/report_server.py`）
+     - report hub 索引中 trades/equity 链接改为 parquet 路径。
+  5. 测试更新（`tests/unit/backtests/test_event_driven.py`、`tests/unit/backtests/test_offline_viewer.py`）
+     - 新增无 CSV 断言、artifact 全 Parquet 断言、chunk `.parquet` 断言。
+     - 新增 offline viewer 对 hyparquet 资产复制与脚本输出校验。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/backtests/test_offline_viewer.py` -> `13 passed`
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests` -> `16 passed`
+  3. `python -m py_compile src/xtrader/backtests/event_driven.py src/xtrader/backtests/offline_viewer.py scripts/offline_report_viewer.py scripts/report_server.py` -> 通过
+  4. `python scripts/task_guard.py check XTR-014` -> 通过
+- 关联任务：`XTR-014`。
+- TODO：执行人工浏览器验收（Validation 中 UI 功能/回归/异常场景项）。
+
+### 2026-03-30 17:20-17:27 CST
+- 完成：按用户请求执行一次真实样本策略回测，用于 UI 报告验收数据准备。
+  1. 数据源：本地 `data/klines/bitget/linear_swap/BTCUSDT/5m`（过去约 3 年窗口）。
+  2. 策略：`ThresholdIntradayStrategy`（`BTCUSDT`，`execution_lag_bars=1`）。
+  3. 输出：`write_strategy_event_driven_outputs` 生成 Parquet-only run（含 chunk parquet 与 resampled 15m/1h/4h/1d）。
+- 回测产物：
+  - `reports/backtests/strategy/threshold_intraday/20260330T092657Z_threshold_intraday_btcusdt_5m_3y_ui_validation_v2/`
+  - `run_manifest.json`：`reports/backtests/strategy/threshold_intraday/20260330T092657Z_threshold_intraday_btcusdt_5m_3y_ui_validation_v2/run_manifest.json`
+- 结果摘要：
+  - `price_rows=314094`，`actions_rows=314094`，`trade_count=6332`
+  - `net_return=-72.695694`，`max_drawdown=-71.559944`，`win_rate=0.274163`，`profit_factor=0.400680`
+  - 目录内无 CSV，满足 Parquet-only 产物约束。
+- 关联任务：`XTR-014`。
+
+### 2026-03-30 19:09-19:11 CST
+- 完成：启动并落地 `XTR-015` Spec/Validation（Kline 视窗驱动动态粒度需求）。
+  1. 创建任务资产：`python scripts/task_guard.py new XTR-015 --title "离线报告UI按可视窗口动态K线粒度"`。
+  2. 编写 Spec：`docs/specs/XTR-015.md`，明确缩放触发重算、raw/agg 自动切换、交易标注与 Y 轴联动、性能节流与验收标准。
+  3. 编写 Validation：`docs/validation/XTR-015.md`，定义单测回归、LOD 行为、回退行为、标注联动与轴范围验证项。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-015` -> 通过。
+- 关联任务：`XTR-015`。
+- 状态：待用户确认后进入实现阶段。
+
+### 2026-03-30 19:17-19:18 CST
+- 完成：更新 `XTR-015` Spec/Validation 交互口径。
+  1. `docs/specs/XTR-015.md`：新增“图内缩放/scrollbar 为主交互、窗口选择器保留为快捷入口”的需求与验收标准。
+  2. `docs/validation/XTR-015.md`：新增“交互入口验收”项，覆盖快捷窗口与图内精细控制并行可用。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-015` -> 通过。
+- 关联任务：`XTR-015`。
+
+### 2026-03-30 19:24-19:25 CST
+- 完成：更新 `XTR-015` 布局优化需求。
+  1. `docs/specs/XTR-015.md`：补充布局口径，明确 `Equity` 调整到 `Kline` 正下方，`Trade Ledger/Timeline` 置于次级区域。
+  2. `docs/specs/XTR-015.md`：补充账本联动要求，点击交易记录时 `Kline` 与 `Equity` 需同步定位窗口。
+  3. `docs/validation/XTR-015.md`：新增“布局可读性验收”“账本联动验收”项并记录本次守门结果。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-015` -> 通过。
+- 关联任务：`XTR-015`。
+
+### 2026-03-30 19:37-19:38 CST
+- 完成：更新 `XTR-015` 布局与 Timeline 分析交互需求。
+  1. `docs/specs/XTR-015.md`：将主体布局明确为全纵向 `Kline -> Equity -> Timeline -> Trade Ledger`。
+  2. `docs/specs/XTR-015.md`：新增 Timeline 双模式（`Global/Trade Focus`）及账本点击触发 Trade Focus 的联动要求。
+  3. `docs/validation/XTR-015.md`：新增 Timeline 模式验收，扩展账本联动验收覆盖 `Timeline` 聚焦切换。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-015` -> 通过。
+- 关联任务：`XTR-015`。
+
+### 2026-03-30 19:37-19:40 CST
+- 完成：更新 `XTR-015` 的数据入口与文案规范。
+  1. `docs/specs/XTR-015.md`：新增“仅保留 Run 目录选择入口，移除独立 `run_manifest.json` 选择控件”。
+  2. `docs/specs/XTR-015.md`：新增“自动在目录内发现 manifest，缺失/冲突给出中文错误提示”。
+  3. `docs/specs/XTR-015.md`：新增“页面主要 Label/按钮/状态/表头/图表名统一中文化，术语一致”。
+  4. `docs/validation/XTR-015.md`：新增目录入口验收、目录一致性验收、中文文案验收。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-015` -> 通过。
+- 关联任务：`XTR-015`。
+
+### 2026-03-30 19:46-19:47 CST
+- 完成：更新 `XTR-015` 文案风格规范（中文主导 + 关键标题双语）。
+  1. `docs/specs/XTR-015.md`：将“统一中文化”细化为“中文为主，关键标题可采用 `中文（English）` 双语样式”。
+  2. `docs/specs/XTR-015.md`：补充术语策略，限定双语仅用于关键标题，其余文案保持中文优先。
+  3. `docs/validation/XTR-015.md`：同步调整中文文案验收口径，覆盖双语标题一致性检查。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-015` -> 通过。
+- 关联任务：`XTR-015`。
+
+### 2026-03-30 19:47-20:00 CST
+- 完成：实现 `XTR-015`（离线查看器交互/布局/文案优化）。
+  1. `src/xtrader/backtests/assets/offline_report_viewer.html`
+     - 控制区移除独立 manifest 选择，仅保留 Run 目录入口；新增目录内 manifest 缺失/冲突检测。
+     - 页面布局改为纵向：`K线 -> 资金曲线 -> 信号与执行时间线 -> 交易记录`。
+     - `Timeline` 新增模式控件：`全局（Global）/单笔聚焦（Trade Focus）`；账本点击可触发聚焦并同步缩放。
+     - K 线缩放事件改为视窗级 LOD 重算：按当前可视窗口动态切换 raw/agg，并同步刷新交易标注与 Y 轴。
+     - 文案改为中文主导，关键标题采用“中文（English）”。
+  2. `tests/unit/backtests/test_offline_viewer.py`
+     - 补充断言：无 `manifestFile` 控件、存在 `timelineMode`、存在目录 manifest 检测逻辑。
+  3. 执行 `scripts/offline_report_viewer.py init`，同步 `reports/backtests/viewer/` 离线页面到最新版本。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_offline_viewer.py tests/unit/backtests/test_event_driven.py` -> `13 passed`
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests` -> `16 passed`
+  3. `python -m py_compile src/xtrader/backtests/offline_viewer.py scripts/offline_report_viewer.py` -> 通过
+  4. `python scripts/task_guard.py check XTR-015` -> 通过
+- 关联任务：`XTR-015`。
+- TODO：按 `docs/validation/XTR-015.md` 继续执行人工验收项（布局/中文文案/Timeline 聚焦等）。
+
+### 2026-03-30 20:11-20:12 CST
+- 完成：启动并落地 `XTR-016` Spec/Validation（K线放大后无法缩小缺陷修复）。
+  1. 创建任务资产：`python scripts/task_guard.py new XTR-016 --title "离线K线缩放后无法缩小的视窗域修复"`。
+  2. 编写 Spec：`docs/specs/XTR-016.md`，明确复现问题、根因（局部 series 刷新导致可缩放域持续收缩）与修复方案（固定 x 轴全局边界 + 保留视窗重采样）。
+  3. 编写 Validation：`docs/validation/XTR-016.md`，定义缩放可逆性、LOD 连续性、联动回归与自动化回归验收项。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-016` -> 通过。
+- 关联任务：`XTR-016`。
+- 状态：待用户确认后进入实现阶段。
+
+### 2026-03-30 20:12-20:15 CST
+- 完成：实现 `XTR-016`（K线放大后无法缩小修复）。
+  1. `src/xtrader/backtests/assets/offline_report_viewer.html`
+     - 为 K 线图引入显式全局时间域：`xAxis.min/max` 固定为 `_klineSource` 首尾时间。
+     - `refreshKlineSeriesByViewport` 保持视窗级 LOD 重采样，但不再让局部 series 覆盖可缩放全域。
+     - 修正 `visible.length===0` 边界：不回退全量重绘，避免缩放过程异常跳变。
+  2. 执行 `scripts/offline_report_viewer.py init`，同步 `reports/backtests/viewer/` 页面到最新版本。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/backtests/test_offline_viewer.py tests/unit/backtests/test_event_driven.py` -> `13 passed`
+  2. `PYTHONPATH=src pytest -q tests/unit/backtests` -> `16 passed`
+  3. `python -m py_compile src/xtrader/backtests/offline_viewer.py scripts/offline_report_viewer.py` -> 通过
+  4. `python scripts/task_guard.py check XTR-016` -> 通过
+- 关联任务：`XTR-016`。
+- TODO：执行人工验收（连续 zoom in/zoom out 可逆性、LOD 连续性、联动稳定性）。
+
+### 2026-03-31 10:12-10:16 CST
+- 完成：启动并落地 `XTR-017` Spec/Validation（离线 UI 多 K 线主源手动切换）。
+  1. 创建任务资产：`python scripts/task_guard.py new XTR-017 --title "离线报告UI支持多K线主源手动切换"`。
+  2. 编写 Spec：`docs/specs/XTR-017.md`，明确控件方案与核心口径：
+     - 默认模式为 `Auto`
+     - `Auto` 规则为“执行周期优先”
+     - 手动选择进入 `Manual`，仅在用户显式切回 `Auto` 时恢复自动策略。
+  3. 编写 Validation：`docs/validation/XTR-017.md`，补齐单测回归、交互验收、联动回归、多周期样例与旧 run 兼容验收计划。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-017` -> 通过。
+- 关联任务：`XTR-017`。
+- 状态：待用户评审 Spec/Validation 方案后进入实现阶段。
+
+### 2026-03-31 10:22-10:24 CST
+- 完成：更新 `XTR-017` 方案范围为“v1 采用 snapshot 懒加载，chunk 化延后”。
+  1. `docs/specs/XTR-017.md`
+     - Requirement 增加：v1 多周期主源读取采用 `snapshot 懒加载`。
+     - Non-goal 增加：v1 不实现多周期 chunk 化读取。
+     - Design 增加：非基础周期按 `snapshots/resampled/price_<tf>.parquet` 懒加载并缓存。
+     - Acceptance 增加：首次切换加载、再次切换命中缓存。
+  2. `docs/validation/XTR-017.md`
+     - 多周期验收项改为验证 `snapshot 懒加载` 缓存行为。
+     - 新增“范围约束验收”确保 v1 不引入多周期 chunk 读取分支。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-017` -> 通过。
+- 关联任务：`XTR-017`。
+- 状态：待用户继续讨论实现细节。
+
+### 2026-03-31 10:32-10:34 CST
+- 完成：更新 `XTR-017` Auto 回退策略为“邻近周期优先”。
+  1. `docs/specs/XTR-017.md`
+     - Requirement：将“执行周期缺失后固定顺序回退”改为“更邻近周期优先回退”。
+     - Design：Auto 第三步改为按 `|candidate_interval_ms - execution_interval_ms|` 升序选择。
+     - Design/Acceptance：补充等距决策规则（优先更细粒度；同周期重复候选优先 base 数据源）。
+  2. `docs/validation/XTR-017.md`
+     - 交互验收项改为明确验证“邻近周期优先”回退行为。
+     - Execution Log 增加本次规则更新与守门检查记录。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-017` -> 通过。
+- 关联任务：`XTR-017`。
+- 状态：按用户要求仅更新文档，暂不实施代码。
+
+### 2026-03-31 10:44-10:46 CST
+- 完成：创建独立策略讨论记忆文件，沉淀长周期讨论上下文。
+  1. 新增文件：`docs/strategy-memory/BG_strategy_discussion_memory.md`
+  2. 初版内容包含：讨论目的、来源材料、当前共识、策略结构拆解、关键不一致点、待决问题清单、决策日志、讨论模板。
+- 关联说明：用于 BG 策略分析与讨论过程管理，暂不进入实现。
+
+### 2026-03-31 11:03-11:05 CST
+- 完成：创建独立 TODO backlog 骨架，用于长期记录“先讨论、后实现”的任务。
+  1. 新增：`docs/backlog/README.md`（backlog 规则、状态流转、ID 规范）
+  2. 新增：`docs/backlog/TODO-index.md`（全局索引看板）
+  3. 新增：`docs/backlog/items/BLG-template.md`（单条 backlog 卡片模板）
+- 用途：讨论期间出现的延后事项统一沉淀到 backlog，后续可升级到 `XTR-xxx`。
+
+### 2026-03-31 11:15-11:17 CST
+- 完成：将“策略文档 2.1 数据预处理未实现项”登记为 backlog。
+  1. 新增：`docs/backlog/items/BLG-0001.md`
+     - 范围：异常值检测（Z-score/IQR）、K线有效性校验、缺失值插值策略。
+     - 状态：`parking`，优先级 `P1`。
+  2. 更新：`docs/backlog/TODO-index.md`
+     - 新增 `BLG-0001` 索引条目与触发条件。
+- 说明：按用户要求先记录待办，不进入实现。
+
+### 2026-03-31 11:28-11:30 CST
+- 完成：按用户决策移除本地报告服务脚本，不再保留 `report_server` 用途。
+  1. 删除：`scripts/report_server.py`
+  2. 更新：`README.md`
+     - 移除 Report Hub Static Server 章节
+     - 改为 Offline Report Viewer 使用说明（`scripts/offline_report_viewer.py init`）
+- 说明：本次仅移除脚本与主 README 入口说明；历史 spec/validation 记录保留为存档。
+
+### 2026-03-31 04:00-04:03 CST
+- 完成：按讨论结论启动并完成 `XTR-018` 的 Spec/Validation 流程（指标实现 v1，仅核心连续值）。
+  1. 创建任务：`python scripts/task_guard.py new XTR-018 --title "Feature Engine 指标实现 v1（核心连续值）"`。
+  2. 更新 Spec：`docs/specs/XTR-018.md`
+     - 明确范围：指标层只做连续值，不做金叉/死叉等事件特征。
+     - 明确 v1 指标族清单（趋势/振荡/波动率/成交量）与输入输出口径。
+     - 明确模块边界：事件特征放 `signal_engine`。
+  3. 更新 Validation：`docs/validation/XTR-018.md`
+     - 补齐计划验证项（守门校验、指标单测、分层边界检查）。
+     - 回填执行日志与证据。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+- 状态：已完成文档守门，待进入指标实现细化讨论。
+
+### 2026-03-31 04:06-04:08 CST
+- 完成：根据新增讨论更新 `XTR-018` 的 Spec/Validation 设计边界。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 增加统一抽象接口要求：`BaseIndicator`（`validate_params/compute` + 元信息字段）。
+     - 增加参数组织模型：`registry + indicator_plan`。
+     - 增加同族多实例示例：`ema_12` 与 `ema_26`。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“接口一致性检查”“参数实例化检查”验证项。
+     - 回填本次讨论后的执行日志。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 04:11-04:13 CST
+- 完成：按讨论补充 `XTR-018` 的指标层行为约束与模块交付链路。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 明确指标计算不允许原地修改输入 DataFrame（immutable input）。
+     - 明确输出为独立 `feature_df`，并由 `feature_pipeline` 拼接生成 `model_df`。
+     - 明确评分系统从 `model_df` 消费约定特征列，不依赖指标内部实现。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“输入不可变检查”“模块交付检查”验证项。
+     - 回填本次文档更新执行记录。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 04:14-04:15 CST
+- 完成：收敛 `XTR-018` 指标接口返回格式决策。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 明确 `compute(df, params)` 必须返回 `pd.DataFrame`（单列指标同样返回 DataFrame）。
+     - 在 Acceptance 中加入返回类型统一验收项。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“返回类型检查”验证项（禁止单列指标返回 `Series`）。
+     - 回填本次收敛决策执行记录。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 04:18-04:19 CST
+- 完成：收敛 `XTR-018` 输出列命名规范。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 明确输出列名强制 `{indicator}_{参数1_参数2}`。
+     - 明确必须包含参数，不允许别名或自定义缩写。
+     - 在 Acceptance 中新增命名规范验收要求。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“命名规范检查”验证项。
+     - 回填本次命名规范收敛记录。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 04:20-04:22 CST
+- 完成：收敛 `XTR-018` 单 `symbol` 模式下 `model_df` 主键与合并口径。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 明确单标的主键为 `timestamp`（UTC、bar open time，非空/唯一/升序）。
+     - 明确 `symbol` 为普通列（全列同值），不进入主键。
+     - 明确 `feature_pipeline` 按 `timestamp` 左连接，合并后不改变 `bars_df` 行数。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“单标的主键检查”“合并口径检查”验证项。
+     - 回填本次规则收敛日志。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 04:24-04:25 CST
+- 完成：收敛 `XTR-018` 的 `indicator_plan` 参数顺序规范。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 明确列名参数顺序由指标族 `param_order` 固定定义，不依赖字典顺序或字母排序。
+     - 明确命名前需完成默认参数填充，默认值参与命名。
+     - 增加示例顺序：`ema(period)`、`macd(fast,slow,signal)`、`bollinger(period,std)`。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“参数顺序检查”“默认参数命名检查”验证项。
+     - 回填本次规则收敛日志。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 04:28-04:30 CST
+- 完成：按最新讨论更新 `XTR-018` 范围与命名细则。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 多输出指标命名明确为“参数前缀 + 语义后缀”。
+     - `MACD(12,26,9)` 固定输出：`macd_12_26_9_line/signal/hist`。
+     - warmup/`NaN` 在评分系统的处理策略延后讨论。
+     - 输入 `bars_df` 出现重复 `timestamp` 时 fail-fast 报错。
+     - 多 `symbol` 迁移明确为当前范围外。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“多输出命名检查”“重复时间戳错误检查”。
+     - 将评分侧校验改为“字段契约可交付”，不要求本任务完成评分实现。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 11:56-11:58 CST
+- 完成：收敛 `indicator_plan` v1 字段契约。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 明确 `indicator_plan` 单条配置仅保留 `family + params`。
+     - 移除示例中的 `instance_id`，改为 `family + params` 示例。
+     - Acceptance 新增“不依赖 `instance_id`”约束。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增 `indicator_plan` 契约检查项（v1 仅 `family + params`）。
+     - 执行日志回填本次收敛结论。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:00-12:01 CST
+- 完成：按用户要求恢复 `indicator_plan` 的 `instance_id` 字段。
+  1. 更新 `docs/specs/XTR-018.md`
+     - `indicator_plan` v1 契约从“`family + params`”恢复为“`instance_id + family + params`”。
+     - 增加约束：同一 `indicator_plan` 内 `instance_id` 必须唯一。
+     - 恢复示例为包含 `instance_id` 的配置。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 调整契约检查项为必含 `instance_id + family + params`。
+     - 新增 `instance_id` 唯一性检查项。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:04-12:06 CST
+- 完成：更新 `XTR-018` 的浮点参数字符串化规则与报错规范草案。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 参数字符串化规则收敛：
+       - `2.0 -> 2`
+       - 非整数浮点保留两位小数（如 `2.3 -> 2.30`）
+     - 新增 v1 报错规范：
+       - 统一格式 `XTR018::<ERROR_CODE>::<detail>`
+       - 错误码分层：`PLAN_* / PARAM_* / INPUT_* / OUTPUT_COLUMN_CONFLICT`
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“浮点字符串化检查”“报错规范检查”“错误码覆盖检查”。
+     - 回填本次规则收敛日志。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:07-12:08 CST
+- 完成：按用户确认固化“除 MACD 外”多输出后缀字典。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 增加 v1 后缀字典：
+       - `bollinger` -> `mid/up/low`
+       - `kd` -> `k/d/j`
+       - `dmi` -> `plus_di/minus_di/adx`
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“非 MACD 多输出后缀检查”验收项。
+     - 执行日志回填本次确认结论。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:21-12:23 CST
+- 完成：补充 `XTR-018` 的 `timestamp` 透传与输入错误边界。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 明确指标层不修改 `timestamp` 值与顺序，不新增/删除时间行。
+     - 明确 `feature_df` 与 `bars_df.timestamp` 一一对应，由 pipeline 按相同时间轴合并。
+     - 明确时间语义异常（缺失/重复/不可解析/非 UTC）归为输入错误并 fail-fast。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“时间透传检查”“时间口径错误检查”验收项。
+     - 执行日志回填本次时间列约束结论。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:26-12:27 CST
+- 完成：按用户要求将“重采样右标签语义风险”登记为 backlog。
+  1. 新增：`docs/backlog/items/BLG-0002.md`
+     - 主题：`timestamp` 在部分重采样路径中的 right-label 语义与全链路一致性风险。
+     - 状态：`parking`，优先级 `P2`。
+     - 触发条件：评分系统研发启动或出现时序错位问题。
+  2. 更新：`docs/backlog/TODO-index.md`
+     - 新增 `BLG-0002` 索引条目。
+- 关联 backlog：`BLG-0002`。
+
+### 2026-03-31 12:31-12:33 CST
+- 完成：按用户决策更新 `XTR-018` 两项规则。
+  1. 更新 `docs/specs/XTR-018.md`
+     - 新增：同一 `indicator_plan` 内禁止重复 `family + params` 组合（防重复计算）。
+     - 新增：浮点参数列名保留小数点，示例 `bollinger_20_2.30_mid`。
+     - 新增错误码：`PLAN_DUPLICATE_FAMILY_PARAMS`。
+  2. 更新 `docs/validation/XTR-018.md`
+     - 新增“`family + params` 去重检查”“浮点列名格式检查”。
+     - 错误码覆盖项增加 `PLAN_DUPLICATE_FAMILY_PARAMS`。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:34-12:43 CST
+- 完成：`XTR-018` 指标层 v1 开发落地（feature_engine）。
+  1. 新增核心模块：
+     - `src/xtrader/strategies/feature_engine/errors.py`
+     - `src/xtrader/strategies/feature_engine/indicators/base.py`
+     - `src/xtrader/strategies/feature_engine/indicators/registry.py`
+     - `src/xtrader/strategies/feature_engine/pipeline.py`
+  2. 新增 12 个指标族实现（分类目录 + 单指标文件）：
+     - trend: `ma/ema/macd/dmi`
+     - oscillator: `rsi/kd/wr`
+     - volatility: `atr/bollinger/stddev`
+     - volume: `volume_ma/volume_variation`
+  3. 新增包导出与子目录 `__init__.py`。
+  4. 新增单测：
+     - `tests/unit/strategies/test_feature_engine.py`
+     - 覆盖：计划契约、命名规则、多输出后缀、浮点命名、时间透传、错误码、重复检测等。
+  5. 更新验证记录：
+     - 回填 `docs/validation/XTR-018.md` 的执行日志与勾选状态。
+- 验证：
+  1. `python -m py_compile src/xtrader/strategies/feature_engine/errors.py src/xtrader/strategies/feature_engine/indicators/base.py src/xtrader/strategies/feature_engine/indicators/registry.py src/xtrader/strategies/feature_engine/pipeline.py tests/unit/strategies/test_feature_engine.py` -> 通过
+  2. `PYTHONPATH=src pytest -q tests/unit/strategies/test_feature_engine.py` -> `11 passed`
+  3. `PYTHONPATH=src pytest -q tests/unit/strategies` -> `30 passed`
+  4. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:50-12:53 CST
+- 完成：执行 `XTR-018` 端到端样例验证（真实本地 BTCUSDT 5m 数据）。
+  1. 从 `data/klines` 读取最近 1500 条 `BTCUSDT` 5m K 线。
+  2. 使用 `FeaturePipeline.build_model_df(...)` 运行多指标计划（`ema/macd/rsi/atr/bollinger/kd/dmi/volume_ma/volume_variation`）。
+  3. 验证结果：`rows=1500`、`feature_cols=18`、尾部 300 行指标非空比例 `1.0`，列命名（含浮点与多输出后缀）符合 `XTR-018` 约束。
+- 文档更新：
+  1. `docs/validation/XTR-018.md` 追加本次端到端执行证据。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 12:57-13:00 CST
+- 完成：补充 `XTR-018` 黄金样本对齐测试（snapshot alignment）。
+  1. 新增 fixture：`tests/unit/strategies/fixtures/feature_engine_golden_v1.json`。
+  2. 新增测试：`test_feature_engine_golden_snapshot_alignment`（`tests/unit/strategies/test_feature_engine.py`）。
+  3. 对齐口径：输出列顺序、首个有效索引、尾部窗口数值快照。
+- 验证：
+  1. `PYTHONPATH=src pytest -q tests/unit/strategies/test_feature_engine.py` -> `12 passed`
+  2. `PYTHONPATH=src pytest -q tests/unit/strategies` -> `31 passed`
+  3. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）
+- 文档更新：
+  1. `docs/validation/XTR-018.md` 追加黄金样本执行证据。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 13:05-13:07 CST
+- 完成：新增黄金样本刷新脚本，支持一键重生成 fixture。
+  1. 新增脚本：`scripts/refresh_feature_engine_golden.py`。
+  2. 功能：固定输入样本与 `indicator_plan`，生成 `feature_engine_golden_v1.json`（支持 `--dry-run` 与自定义输出路径）。
+- 验证：
+  1. `python scripts/refresh_feature_engine_golden.py --dry-run` -> 输出路径与快照规模。
+  2. `python scripts/refresh_feature_engine_golden.py` -> 成功刷新 fixture。
+  3. `PYTHONPATH=src pytest -q tests/unit/strategies/test_feature_engine.py` -> `12 passed`。
+  4. `python scripts/task_guard.py check XTR-018` -> 通过（`✓ Spec & Validation check passed.`）。
+- 文档更新：
+  1. `docs/validation/XTR-018.md` 追加刷新脚本执行证据。
+- 关联任务：`XTR-018`。
+
+### 2026-03-31 13:13-13:15 CST
+- 完成：将“3.1 评分维度一（成交量分析）v1 修正版”登记 backlog，暂不实施。
+  1. 新增：`docs/backlog/items/BLG-0003.md`
+  2. 更新索引：`docs/backlog/TODO-index.md`
+- 记录内容：
+  1. 明确 v1 候选口径：`ratio + spike + trend`（含 anti-lookahead 与归一化约束）。
+  2. 明确触发条件：评分系统任务启动后再升级为 `XTR-xxx` 进入 spec/validation。
+- 关联 backlog：`BLG-0003`。
+
+### 2026-03-31 13:22-13:24 CST
+- 完成：将“维度二 K 线形态分析的上下文识别规则”登记 backlog，暂不实施。
+  1. 新增：`docs/backlog/items/BLG-0004.md`
+  2. 更新索引：`docs/backlog/TODO-index.md`
+- 记录内容：
+  1. 收敛支撑阻力识别口径：`rolling high/low + ATR/百分比容差 + shift(1) anti-lookahead`。
+  2. 收敛近期趋势识别口径：`N 根阴线计数 + 净跌幅 + 斜率`。
+  3. 收敛 v1 默认参数：`50/14/0.5/0.2%/5/4/0.3%/slope<=0`。
+- 关联 backlog：`BLG-0004`。
+
+### 2026-03-31 13:31-13:33 CST
+- 完成：将“维度三（技术指标分析）程序化实现思路”登记 backlog，暂不实施。
+  1. 新增：`docs/backlog/items/BLG-0005.md`
+  2. 更新索引：`docs/backlog/TODO-index.md`
+- 记录内容：
+  1. 明确分层：`feature_engine` 只算指标，评分逻辑进入 `signal/scoring` 层。
+  2. 明确 v1 子分项：`rsi/macd/ma_alignment/bb_breakout`。
+  3. 明确建议权重：`0.25/0.30/0.25/0.20`，并预留“共振加成”。
+  4. 明确输出契约：`technical_score` + 子分项列 + `technical_reasons`。
+- 关联 backlog：`BLG-0005`。
+
+### 2026-03-31 13:44-13:47 CST
+- 完成：根据“维度三/维度四优化空间”讨论，更新维度三并新增维度四 backlog。
+  1. 更新：`docs/backlog/items/BLG-0005.md`
+  2. 新增：`docs/backlog/items/BLG-0006.md`
+  3. 更新索引：`docs/backlog/TODO-index.md`
+- 记录内容：
+  1. 维度三收敛为“事件触发层”（短窗 5-20 bars），新增与维度四 gate 联动约束。
+  2. 维度四定义为“趋势状态层”（中窗 20-100 bars），聚焦强度/持续性，不承担触发职责。
+  3. 明确两维去重边界：`event vs state`，避免重复计分。
+- 关联 backlog：`BLG-0005`、`BLG-0006`。
+
+### 2026-03-31 13:54-13:56 CST
+- 完成：将“维度五（波动率分析）判定逻辑、问题与优化方向”登记 backlog，暂不实施。
+  1. 新增：`docs/backlog/items/BLG-0007.md`
+  2. 更新索引：`docs/backlog/TODO-index.md`
+- 记录内容：
+  1. 维度五收敛为“环境评分层”，不直接承担方向触发职责。
+  2. 识别问题：`ATR/BB宽度/历史波动率` 同质性高、方向语义未冻结、缺少状态切换特征。
+  3. 优化方向：分位化表达 + `vol_regime_shift` + 与维度三/四协同 gate。
+- 关联 backlog：`BLG-0007`。
+
+### 2026-03-31 14:03-14:05 CST
+- 完成：将“3.2 权重配置策略”的动态权重机制登记 backlog，暂不实施。
+  1. 新增：`docs/backlog/items/BLG-0008.md`
+  2. 更新索引：`docs/backlog/TODO-index.md`
+- 记录内容：
+  1. 收敛动态权重公式：`w_raw = w_base * m_state * q`，归一化后保证总和 100%。
+  2. 收敛三大组件：状态判定（regime）、乘子矩阵、权重平滑与异常回退。
+  3. 收敛防抖要求：状态连续确认 `N` 根后切换，权重使用 EMA 平滑。
+- 关联 backlog：`BLG-0008`。
+
+### 2026-03-31 14:13-14:15 CST
+- 完成：为 `BLG-0008` 补充首版动态权重乘子矩阵草案。
+  1. 更新：`docs/backlog/items/BLG-0008.md`
+- 记录内容：
+  1. 新增基准权重建议：`0.15/0.10/0.25/0.30/0.20`（五维顺序）。
+  2. 新增 5 状态 x 5 维度乘子矩阵（`TREND_CLEAN`/`TREND_TURBULENT`/`RANGE_COMPRESSION`/`RANGE_NOISY`/`TRANSITION`）。
+  3. 新增归一化后的参考权重表，便于后续回测调参与边界检查。
+  4. 将“给出首版乘子矩阵草案”任务项标记为完成。
+- 关联 backlog：`BLG-0008`。
+
+### 2026-03-31 15:08-15:10 CST
+- 完成：将“评分型策略接口方案”讨论结论登记 backlog，暂不实施。
+  1. 新增：`docs/backlog/items/BLG-0009.md`
+  2. 更新索引：`docs/backlog/TODO-index.md`
+- 记录内容：
+  1. v1 结论：先不强制引入 `StrategyProfile`。
+  2. 采用“策略内嵌评分规则执行 + 统一评分模块调用”方案。
+  3. 保持 `BaseActionStrategy` 接口不变，动作输出 schema 不变，兼容现有回测执行链路。
+- 关联 backlog：`BLG-0009`。
+
+### 2026-03-31 15:22-15:25 CST
+- 完成：根据评分系统讨论更新系统架构文档（`docs/system_architecture.md`）。
+- 记录内容：
+  1. M2 增补 `Regime-Aware Scoring` 子模块，明确“状态判定+评分+权重”一体化方向。
+  2. 增补“评分型策略与直判策略并存”约束，保持 `BaseActionStrategy` 统一动作输出契约。
+  3. M7 增补 `score/regime/weight/signal` 诊断产物规划。
+  4. 分阶段实施建议调整：评分闭环前置为 Phase 1，执行最小闭环顺延。
+  5. 接口边界补充：策略输出风险意图、执行层负责成交、风控层负责持仓后强制退出。
+
+### 2026-03-31 18:06-18:08 CST
+- 完成：将“声明式配置 + FeatureRef + feature_catalog + trial 预编译”整理为运行管理文档（不放 strategy-memory）。
+  1. 新增：`docs/strategy_runtime_management.md`
+- 记录内容：
+  1. 冻结 `FeatureRef` 引用规范与 `feature_catalog` 自动生成机制。
+  2. 冻结 trial 级 precompile 流程、fail-fast 校验与产物落盘要求。
+  3. 明确参数寻优场景下的 trial 隔离、哈希追溯与缓存一致性约束。
+
+### 2026-03-31 18:14-18:17 CST
+- 完成：创建并补全 `XTR-019` 任务草案（不走 backlog，直接进入 spec/validation）。
+  1. 创建：`docs/specs/XTR-019.md`
+  2. 创建：`docs/validation/XTR-019.md`
+- 记录内容：
+  1. XTR-019 主题：`Strategy Runtime Core v1（Backtest-first）`。
+  2. Spec 已覆盖：Runtime Core 架构、precompile、FeatureRef/catalog、trial 隔离、验收标准。
+  3. Validation 已覆盖：计划校验项与执行记录，并完成 `task_guard` 守门检查。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）。
+
+### 2026-03-31 15:18-15:20 CST
+- 完成：创建“实现前定稿清单（Ready Checklist）”并存储到 strategy-memory。
+  1. 新增：`docs/strategy-memory/implementation_ready_checklist.md`
+- 记录内容：
+  1. 将动作契约、信号执行顺序、评分状态机制、时间与可解释性等关键冻结项结构化为可勾选清单。
+  2. 清单关联 `BLG-0002/0005/0006/0007/0008/0009`，用于后续讨论逐条回填并在实现前统一复核。
+
+### 2026-03-31 18:41-18:43 CST
+- 完成：将 `strategy_runtime_management.md` 关键细则同步补充到 `XTR-019` spec/validation。
+  1. 更新：`docs/specs/XTR-019.md`
+  2. 更新：`docs/validation/XTR-019.md`
+- 记录内容：
+  1. 补充 `output_key` 后缀字典约束、`FeatureAccessor` 访问约束、trial 产物最小集、缓存 key 一致性约束。
+  2. Validation 新增对应校验项，确保 spec 与运行管理文档主干口径一致。
+- 验证：
+  1. `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）。
+
+### 2026-03-31 19:15-19:25 CST
+- 完成：按用户确认将 `XTR-019` 固化为 JSON 主格式（`schema_version=xtr_runtime_v1`），并明确 `trial_config.mode=scenarios` 覆盖口径（`timeframe + instance_id`）。
+- 完成：在 `docs/specs/XTR-019.md` 增加 v1 完整 JSON 样例，补充“废弃 path/search_space 作为 v1 主口径”的说明。
+- 完成：在 `docs/validation/XTR-019.md` 增加 JSON 样例校验项，并记录本轮更新日志。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续按“逐条讨论”方式收敛剩余未定项（schema 细则、错误码字典、多周期对齐等）。
+
+### 2026-03-31 19:25-19:35 CST
+- 完成：将 XTR-019 的 JSON Schema 细则定稿并写入 Spec（必填/可选字段、默认值策略、未知字段 fail-fast、一致性约束与去重约束）。
+- 完成：同步更新 Validation 计划，新增对应校验项（字段缺失、默认值、生僻字段拒绝、timeframe 一致性、同 TF 去重）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一个未定项（建议进入 precompile 错误码字典）。
+
+### 2026-03-31 19:35-19:45 CST
+- 完成：在 `XTR-019` 中定稿 precompile 错误码规范（`PC-{DOMAIN}-{NNN}`）、标准错误载荷字段、首批错误码字典（CFG/TFM/DUP/OUT/REF/TRI/SYS）。
+- 完成：在 Validation 增加错误码格式、错误载荷、错误码映射的验证项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条收敛下一个未定项（建议：多时间周期对齐语义）。
+
+### 2026-03-31 19:45-19:55 CST
+- 完成：在 `XTR-019` 定稿“多时间周期对齐语义”（open-time 时间戳、as-of 可用性、同周期 1-bar lag、仅支持 source>=execution、缺失值保留 NaN、right-label 预处理转换）。
+- 完成：同步更新 Validation 计划，新增前视防护、同周期 lag、周期方向约束、NaN 策略等验证项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一个未定项（建议：FeatureAccessor 缺失值/报错策略）。
+
+### 2026-03-31 19:55-20:05 CST
+- 完成：在 `XTR-019` 定稿 `FeatureAccessor` 行为语义（`FeatureRef` 不存在即抛错中断；存在但值缺失返回 `NaN`；评分/信号链路按“未满足/0分”处理 `NaN`）。
+- 完成：新增 Validation 校验项（存在性报错、缺失值透传、主链路禁止 `get_or_default` 兜底）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论（建议下一条：trial 调度与缓存生命周期）。
+
+### 2026-03-31 20:05-20:15 CST
+- 完成：在 `XTR-019` 定稿 trial 调度策略（全量 precompile 前置、`scenarios` 顺序稳定调度、单 trial 失败 abort / 多 trial 失败 continue、输出成功/失败/跳过 trial 清单）。
+- 完成：在 `XTR-019` 定稿缓存生命周期策略（run 级共享、跨 run 禁止复用、trial 结束释放临时对象、run 结束清空缓存）。
+- 完成：升级缓存 key 口径为 `symbol + timeframe + data_range + family + params_hash + code_version + data_version`。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一个未定项（建议：run_manifest 兼容口径与字段冻结）。
+
+### 2026-03-31 20:15-20:25 CST
+- 完成：在 `XTR-019` 定稿 run 产物与 Report Viewer 对接口径：不再产出独立 report 文档，仅产出结构化数据文件供 Viewer 打开。
+- 完成：定稿单 run 根目录（`runs/{run_id}/`）与配置双文件落盘（`strategy_config.raw.json` + `strategy_config.resolved.json`），并要求 `run_manifest` 向后兼容。
+- 完成：同步更新 Validation（run 目录聚合、无独立报告、Viewer 数据输入、manifest 兼容、配置双文件）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一条未定项。
+
+### 2026-03-31 20:25-20:35 CST
+- 完成：在 `XTR-019` 补充 `report -> runs/{run_id}` 迁移策略，明确过渡期 `output_mode=dual_write`（双写）与目标态 `output_mode=runs_only`（停写 report）。
+- 完成：补充验收与验证条目（双写一致性、切换后 report 停写）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：后续可在实现阶段补一条迁移观测脚本，自动比对 dual_write 两边关键文件一致性。
+
+### 2026-03-31 20:35-20:45 CST
+- 完成：根据用户纠正，撤回 `dual_write` 迁移方案，`XTR-019` 明确为“仅写 `runs/{run_id}`，不再输出到 `report` 目录”。
+- 完成：同步更新 Spec/Validation（删除 dual_write/runs_only 迁移条目，改为 report 停写硬约束）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续梳理其余未定项（若继续讨论，可先定 Viewer 最小必需文件清单）。
+
+### 2026-03-31 20:45-20:55 CST
+- 完成：在 `XTR-019` 定稿 `run_manifest` v1 最小必填字段口径。
+- 完成：明确 `run_manifest` 不存配置细节，仅保留 `config_refs`（raw/resolved 路径与 hash）以避免重复维护。
+- 完成：Validation 新增 manifest 必填字段与去冗余校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续按逐条讨论推进下一项。
+
+### 2026-03-31 20:55-21:05 CST
+- 完成：在 `XTR-019` 补充 Viewer 输入契约，新增数据快照必需文件：`data_snapshot/raw_klines.parquet`、`data_snapshot/resampled_klines.parquet`、`data_snapshot/snapshot_meta.json`。
+- 完成：新增 snapshot 最小 schema 与 Viewer 状态约定（缺必需文件=`INVALID_RUN`，缺可选文件=`NOT_AVAILABLE`）。
+- 完成：Validation 同步新增 snapshot 文件存在性、schema、meta 与状态校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 21:05-21:15 CST
+- 完成：将 Viewer 数据快照契约升级为按 timeframe 分文件（`data_snapshot/raw/{timeframe}.parquet`、`data_snapshot/resampled/{timeframe}.parquet`）。
+- 完成：新增 `data_snapshot/dataset_index.json` 索引契约与 `snapshot_meta.required_timeframes` 规则。
+- 完成：明确缺失任一 `required_timeframe` 数据集时，Viewer 返回 `INVALID_RUN`。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 21:15-21:25 CST
+- 完成：在 `XTR-019` 定稿 precompile WARN 策略：默认 `warn_policy=record_only`，可选 `warn_policy=error`。
+- 完成：新增审计字段要求：`precompile_report` 与 `run_manifest` 必须记录 `warn_policy/warn_count/warn_codes`。
+- 完成：Acceptance/Validation 同步新增 WARN 相关条款（记录模式与升级失败模式）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 21:25-21:35 CST
+- 完成：在 `XTR-019` 定稿 run 终态与退出码口径：`SUCCESS/PARTIAL_SUCCESS/FAILED` 对应 `0/2/1`。
+- 完成：补充 `run_manifest` 状态字段约束（`run_status/exit_code/trial_summary.total_trials`）与 `warn_policy` 联动规则。
+- 完成：Validation 同步新增终态、退出码、manifest 状态字段与 WARN-终态联动校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 21:35-21:45 CST
+- 完成：在 `XTR-019` 定稿多 trial 终态与退出码：`run_status=SUCCESS/PARTIAL_SUCCESS/FAILED`，`exit_code=0/2/1`。
+- 完成：补充 `run_manifest` 状态字段要求（`run_status/exit_code/trial_summary.total_trials`）与 WARN 终态联动规则。
+- 完成：Validation 新增终态、退出码、manifest 状态字段及 WARN-终态联动校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论（建议进入 hash 规范细则）。
+
+### 2026-03-31 21:45-21:55 CST
+- 完成：在 `XTR-019` 定稿哈希规范：`config_hash/catalog_hash/params_hash` 统一使用 `SHA-256` 与 Canonical JSON。
+- 完成：补充浮点规范（整数值整型化、非整数保留两位）并明确非语义字段不参与 hash。
+- 完成：Validation 新增 hash 算法、序列化、浮点、一致性/差异性与排除字段校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 21:55-22:00 CST
+- 完成：在 `XTR-019` 补充哈希规范落地细则后，重新复核 Validation 校验项与执行日志一致性。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论（建议进入 `code_version/data_version` 口径冻结）。
+
+### 2026-03-31 22:00-22:10 CST
+- 完成：在 `XTR-019` 定稿 `code_version/data_version` 生成口径（格式、来源、fail-fast、落盘一致性）。
+- 完成：`run_manifest` 必填字段补充 `code_version` 与 `data_version`，并要求 summary 镜像写入。
+- 完成：Validation 新增版本字段格式、来源、生成逻辑、fail-fast 与一致性校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 22:10-22:20 CST
+- 完成：在 `XTR-019` 定稿 Viewer 核心结果文件列级 schema（`summary/trades/equity` 的最小列与类型）。
+- 完成：新增 Viewer 判定规则：必需文件列缺失或类型不匹配即 `INVALID_RUN`；时间列必须 UTC，数值列不可字符串化。
+- 完成：Validation 同步新增列级 schema、类型、UTC 与数值列校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 22:20-22:30 CST
+- 完成：在 `XTR-019` 定稿非功能验收阈值（场景A/B耗时与内存、precompile 上限、稳定性复现、回归退化阈值）。
+- 完成：在 Validation 增加对应校验项与性能日志字段要求（`elapsed_ms/peak_rss_mb/trials_count/bars_count/status`）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续梳理剩余待定项，或进入实现前清单冻结。
+
+### 2026-03-31 22:30-22:40 CST
+- 完成：在 `XTR-019` 补充 `diagnostics.parquet` 最小 schema（列与类型）及语义要求。
+- 完成：明确 diagnostics 为可选文件：缺失返回 `NOT_AVAILABLE`，存在但 schema 异常仅 diagnostics 子面板报错，不影响主结果面板。
+- 完成：Validation 同步新增 diagnostics schema/语义/降级行为校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续下一条未定项讨论。
+
+### 2026-03-31 22:40-22:50 CST
+- 完成：将 `diagnostics` 最小诊断语义（`score/state/weight/signal/reason`）同步写入 Ready Checklist 与 `XTR-019` Spec/Validation。
+- 完成：Ready Checklist 中“评分型策略输出诊断字段冻结”条目标记为已冻结，并补充降级约定（缺失 `NOT_AVAILABLE`、schema 异常仅 diagnostics 子面板报错）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定条目。
+
+### 2026-03-31 22:50-23:00 CST
+- 完成：冻结 `stop_loss/take_profit` v1 语义为“动作输出统一绝对价格位（float64）”。
+- 完成：明确 `%/ATR` 仅用于策略内部推导，输出前必须换算，执行层不做二次解释。
+- 完成：同步更新 Ready Checklist 与 `XTR-019` Spec/Validation（含 Acceptance 与校验项）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定条目。
+
+### 2026-03-31 23:00-23:10 CST
+- 完成：冻结 `size` 口径为“账户权益占比（0~1）的仓位指令”，并明确 `size` 不承载方向，方向由 `action` 决定。
+- 完成：补充动作约束：`ENTER_*` 必须 `size>0`，`EXIT/HOLD` 必须 `size=0`，冲突视为 fail-fast。
+- 完成：同步更新 Ready Checklist 与 `XTR-019` Spec/Validation（含 Acceptance 与校验项）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定条目。
+
+### 2026-03-31 23:10-23:20 CST
+- 完成：冻结 `action` 枚举为 `ENTER_LONG/ENTER_SHORT/EXIT/HOLD`（v1 不启用 `REVERSE`）。
+- 完成：冻结 `BUY/SELL/HOLD` 到 `action` 的持仓态映射规则，并明确同 bar 仅允许单动作（禁止“平仓+开仓”同 bar 反手）。
+- 完成：同步更新 Ready Checklist 与 `XTR-019` Spec/Validation（含 Acceptance 与验证项）。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定条目。
+
+### 2026-03-31 23:20-23:30 CST
+- 完成：在 `XTR-019` 冻结 `reason_code` 枚举（`ENTRY_* / EXIT_* / HOLD_*`）与 `action-reason` 一致性约束。
+- 完成：明确 `reason` 字段在 v1 承载 `reason_code`；`reason_detail` 为可选解释字段，不参与执行分支。
+- 完成：Validation 新增 `reason_code` 枚举校验、`action-reason` 一致性校验与 `reason_detail` 约束校验。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-03-31 23:30-23:40 CST
+- 完成：在 `XTR-019` 冻结 `risk_rules` v1 schema：`position_size=fixed_fraction(value∈(0,1])`、`stop_loss=atr_multiple(n>=1,k>0)`、`take_profit=rr_multiple(rr>0)`。
+- 完成：明确未知 `mode`、缺字段、类型错误、越界值均 fail-fast，并命中 `PC-CFG-003`。
+- 完成：冻结 scenario 覆盖边界：v1 不允许通过 `trial_config.changes` 覆盖 `risk_rules`，违规命中 `PC-TRI-001`。
+- 完成：Validation 同步新增 `risk_rules` schema/范围/错误码与 scenario 边界校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-03-31 23:40-23:50 CST
+- 完成：在 `XTR-019` 冻结 `run_manifest` 向后兼容边界：`manifest_version` 整数门禁（`>=1`）、v1 显式分支解析、必填字段稳定契约。
+- 完成：明确 `manifest_version=1` 缺失任一 v1 必填字段时，Viewer 返回 `INVALID_RUN`。
+- 完成：明确字段弃用流程为“两阶段”（deprecated 保留读取 -> 下一大版本移除）。
+- 完成：Validation 同步新增 manifest 版本门禁/必填缺失/弃用流程校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-03-31 23:50-23:59 CST
+- 完成：在 `XTR-019` 冻结 `diagnostics.score_breakdown/weights_applied` 类型为 `string`（内容为 JSON 对象字符串）。
+- 完成：补充语义约束：对象 value 必须为数值，`weights_applied` 权重和满足 `abs(sum-1)<=1e-6`。
+- 完成：明确 JSON 非法或语义不满足时仅 diagnostics 子面板报错，不影响主结果面板。
+- 完成：Validation 同步新增 diagnostics JSON 可解析、值类型、权重和校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-04-01 00:00-00:10 CST
+- 完成：在 `XTR-019` 冻结 `dataset_index/snapshot_meta` 枚举与集合约束：`kind={raw,resampled}`、`label_semantics={open_time,right_label}`、`timezone=UTC`。
+- 完成：明确 `dataset_index.datasets[].path` 必须为相对 `runs/{run_id}` 的相对路径，禁止绝对路径。
+- 完成：明确 `required_timeframes ⊆ timeframes` 且必须包含 `execution_timeframe`。
+- 完成：Validation 同步新增 dataset 枚举、path 约束与 `required_timeframes` 关系校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-04-01 00:10-00:20 CST
+- 完成：在 `XTR-019` 冻结 `warn_policy` 配置入口（config 顶层 + CLI `--warn-policy`）与优先级（`CLI > config > default(record_only)`）。
+- 完成：明确同一 run 仅允许一个生效 `warn_policy`，不支持 per-trial 单独覆盖。
+- 完成：明确非法 `warn_policy` 取值/类型错误 fail-fast，命中 `PC-CFG-003`；生效值需落盘到 `precompile_report` 与 `run_manifest`。
+- 完成：Validation 同步新增 WARN 入口/优先级/单 run 一致性/非法值校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-04-01 00:20-00:30 CST
+- 完成：在 `XTR-019` 冻结 `trial_config.scenarios` 冲突规则：`trial_id` 必须唯一，单 scenario 内 `timeframe+instance_id` 不得重复。
+- 完成：明确 `changes` 原子生效：任一 change 非法时整个 scenario 失败，不允许部分应用。
+- 完成：新增错误码 `PC-TRI-002`（scenario 冲突：重复 `trial_id` 或重复覆盖目标）。
+- 完成：Validation 同步新增 trial 冲突与原子生效校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-04-01 00:30-00:40 CST
+- 完成：在 `XTR-019` 冻结执行时序与成交口径：`signal_time=t`、`execution_time=t+1`、成交价 `next_bar_open`。
+- 完成：明确 `stop_loss/take_profit` 从入场后续 bar 生效，禁止入场同 bar 触发。
+- 完成：明确尾部缺失 `t+1` bar 时信号标记为 skipped 并记录原因，不生成伪成交。
+- 完成：Validation 同步新增时序、成交价、SL/TP 生效时序与尾部未成交校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-04-01 00:40-00:50 CST
+- 完成：在 `XTR-019` 冻结 skipped 信号落盘与统计口径：新增 `artifacts/signals.parquet`，并要求 `summary.skipped_signal_count`。
+- 完成：明确 `trades.parquet` 仅包含已成交记录（不混入 skipped），`signals.status=SKIPPED` 必须带 `skip_reason`。
+- 完成：明确仅出现 skipped 信号不得单独导致 `run_status=FAILED`。
+- 完成：Validation 同步新增 signals/schema/统计一致性与 trades 成交纯度校验项。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-04-01 00:50-01:00 CST
+- 完成：在 `XTR-019` 冻结 `signals.skip_reason` 枚举：`NO_NEXT_BAR|MARKET_CLOSED|DATA_GAP|RISK_BLOCKED|INVALID_ORDER`。
+- 完成：明确 `status=SKIPPED` 时 `skip_reason` 必填且命中枚举，`status=FILLED` 时 `skip_reason` 为空。
+- 完成：Validation 同步新增 `skip_reason` 枚举命中校验项，并补执行日志留痕。
+- 验证：`python scripts/task_guard.py check XTR-019` 通过（`✓ Spec & Validation check passed.`）。
+- TODO：继续逐条讨论下一项未定问题。
+
+### 2026-04-01 01:00-01:10 CST
+- 完成：将 `XTR-019` 的关键接口从“草案”冻结为 v1 契约，明确 `RuntimeCore.run` 与 `PrecompileEngine.compile(config, trial_selector=None)`。
+- 完成：补充 `RuntimeRunResult/PrecompileResult` 最小返回字段与 v1 兼容性规则（仅允许向后兼容新增，破坏性变更需升 `schema_version`）。
+- 完成：Validation 同步新增接口签名、返回字段与兼容性校验项，并记录执行日志。
+- TODO：继续逐条讨论并冻结剩余未定项。
+
+### 2026-04-01 01:10-01:20 CST
+- 完成：在 `XTR-019` Spec 新增“实施里程碑与退出门槛（M1~M5）”，明确按阶段推进而非一次性全量实现。
+- 完成：在 `XTR-019` Validation 新增 `P0/P1/P2` 分级执行策略，并绑定各里程碑必跑项与通过门槛。
+- 完成：补充执行记录要求（每阶段正/反例、命令、证据路径），用于保障落地过程可追溯。
+- TODO：继续按“逐条讨论-冻结”的方式推进后续实现细节。
+
+### 2026-04-01 01:20-01:40 CST
+- 完成：按用户确认启动 XTR-019 首轮落地（`M1 + P0`，边界为 `backtest` 单 trial）。
+- 完成：新增 Runtime 模块 `src/xtrader/runtime/`：
+  - `config.py`：`schema_version=xtr_runtime_v1` 严格校验、默认值（`warn_policy=record_only`、`trial_config.mode=single`）、单 trial 边界约束。
+  - `precompile.py`：`PrecompileEngine.compile(config, trial_selector=None)`、`FeatureRef`/`feature_catalog` 生成、重复项检测与结构化错误返回。
+  - `core.py`：`RuntimeCore.run(config, data_source, mode="backtest")` 单 trial 回测闭环，落盘 `strategy_config.raw/resolved`、`feature_catalog`、`precompile_report`，并补丁 `run_manifest` 关键字段。
+- 完成：新增单测 `tests/unit/runtime/test_runtime_v1.py`，覆盖配置默认值与 fail-fast、precompile catalog、runtime 单 trial 闭环。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `5 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `python -m py_compile src/xtrader/runtime/config.py src/xtrader/runtime/precompile.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过
+- TODO：下一轮进入 `M2`（trial/scenario 编排与更完整 precompile 规则）或补齐当前 P0 条目到 validation 勾选级证据。
+
+### 2026-04-01 01:40-01:50 CST
+- 完成：回溯 `docs/specs/XTR-019.md` 与 `docs/validation/XTR-019.md`，汇总当前 XTR-019 实施与验证状态供用户答复。
+- 完成：检查 `src/xtrader/runtime/` 代码与 `tests/unit/runtime/test_runtime_v1.py`（单 trial 闭环单测），并确认回测写盘行为与当前 Spec 的匹配差距。
+- 验证：`python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）。
+- TODO：后续根据用户要求进入 M2（trial/scenario + precompile 完整错误码）并补写验证证据。
+
+### 2026-03-31 20:00-20:10 CST
+- 完成：按用户确认，为 `XTR-019` 新增 M2 详细实施计划（实施级），明确 `M2-A~M2-F` 工作包、错误码边界、测试门槛与 DoD。
+- 完成：在 Validation 中新增 M2 详细验证矩阵（`V2-A~V2-F`），补充命令模板、期望结果与证据归档规范。
+- 验证：`python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）。
+- TODO：按 `M2-A -> M2-F` 顺序进入实现，并逐条补 Execution Log（正例/反例 + run 证据路径）。
+
+### 2026-03-31 20:10-20:30 CST
+- 完成：启动并完成 `XTR-019` 的 `M2-A` 首轮实现（`trial_config.mode=scenarios` 解析与冲突检测）。
+- 完成：更新 `src/xtrader/runtime/config.py`：
+  - 支持 `trial_config.mode=single/scenarios`；
+  - 校验 `trial_id` 唯一与 scenario 内 `timeframe+instance_id` 去重（`PC-TRI-002`）；
+  - 校验 scenario 目标存在性与 `risk_rules` 覆盖门禁（`PC-TRI-001`）；
+  - 新增 `resolve_trials`，输出稳定顺序 trial 列表。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`，新增 scenarios 正例与冲突反例覆盖（重复 `trial_id`、重复 target、不存在 target）。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `9 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `python -m py_compile src/xtrader/runtime/config.py src/xtrader/runtime/precompile.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：下一轮进入 `M2-B`（scenario `changes` 原子生效与更完整覆盖应用链路）。
+
+### 2026-03-31 20:30-20:45 CST
+- 完成：补充 `M2-A` 防误用门禁，避免 `scenarios` 在尚未实现覆盖应用时被误当成可执行多 trial。
+- 完成：更新 `src/xtrader/runtime/precompile.py`，当 `trial_config.mode=scenarios` 时显式返回 `PC-TRI-001`（precompile fail-fast）。
+- 完成：更新 `src/xtrader/runtime/core.py`，当 `trial_config.mode=scenarios` 时显式返回 `PC-TRI-001`（runtime fail-fast）。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`，新增 precompile/runtime 对应防护用例。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `11 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `python -m py_compile src/xtrader/runtime/config.py src/xtrader/runtime/precompile.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：进入 `M2-B`，实现 scenario `changes` 的原子应用与 trial 级 precompile。
+
+### 2026-03-31 20:45-21:05 CST
+- 完成：实现 `M2-B` 的 scenario `changes` 原子应用链路。
+- 完成：更新 `src/xtrader/runtime/config.py`：
+  - `resolve_trials` 从“仅回传 changes”升级为“产出 trial 级 `resolved_config`”；
+  - 在 scenario 解析后按声明顺序应用 `changes` 到对应指标实例 `params`；
+  - 保持原子语义：任一目标不存在即 `PC-TRI-001`，不产生部分生效结果。
+- 完成：更新 `src/xtrader/runtime/precompile.py`：
+  - `compile(config, trial_selector=...)` 支持在 `scenarios` 下编译指定 trial；
+  - `scenarios` 下未提供 `trial_selector` 或 selector 不存在时 fail-fast（`PC-TRI-001`）。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`：
+  - 覆盖 trial 级 `resolved_config` 应用效果（`baseline=period 5`，`ema_fast_8=period 8`）；
+  - 覆盖 `PrecompileEngine` 的 selector 必填、指定 scenario 成功、未知 selector 失败。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `13 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `python -m py_compile src/xtrader/runtime/config.py src/xtrader/runtime/precompile.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：进入 `M2-C`（补齐 precompile 错误码映射与失败载荷完整性）或 `M2-E`（全量 precompile 前置与多 trial 调度骨架）。
+
+### 2026-03-31 21:05-21:30 CST
+- 完成：实现 `M2-E` 首轮调度能力（全量 precompile 前置 + 多 trial 执行策略）。
+- 完成：更新 `src/xtrader/runtime/core.py`：
+  - 运行前先对全部 trial precompile，再进入执行；
+  - 单 trial 失败保留 `abort`；
+  - 多 trial 执行失败改为 `continue`，并汇总 `trial_summary`；
+  - 新增 run 终态/退出码推导：`SUCCESS/PARTIAL_SUCCESS/FAILED -> 0/2/1`，并写入 `run_manifest`。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`：
+  - 新增单 trial 失败即中止用例；
+  - 新增多 trial 部分失败继续执行用例（`PARTIAL_SUCCESS`，`exit_code=2`，失败 trial 清单落盘）。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `14 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `python -m py_compile src/xtrader/runtime/config.py src/xtrader/runtime/precompile.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：进入 `M2-C`（precompile 错误载荷与错误码映射收口）并补 `warn_policy` 联动校验。
+
+### 2026-03-31 21:30-21:50 CST
+- 完成：实现 `M2-C` 首轮能力（precompile 错误码映射与错误载荷增强）。
+- 完成：更新 `src/xtrader/runtime/errors.py`，扩展结构化错误字段：`timeframe/instance_id/feature_ref/suggestion`。
+- 完成：更新 `src/xtrader/runtime/precompile.py`：
+  - 新增规则引用静态检查（`signal_rules/scoring_rules/fusion_rules`）；
+  - 规则引用无法解析命中 `PC-REF-001`；
+  - `output_key` 非法命中 `PC-OUT-001`。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`，新增 `PC-REF-001` / `PC-OUT-001` 反例测试，并校验错误载荷扩展字段。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `16 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `python -m py_compile src/xtrader/runtime/errors.py src/xtrader/runtime/precompile.py src/xtrader/runtime/config.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：进入 `M2-D`（`warn_policy` 的 CLI > config > default 优先级与失败策略联动）。
+
+### 2026-03-31 21:50-22:10 CST
+- 完成：实现 `M2-D` 首轮能力（`warn_policy` 优先级与阻断策略联动）。
+- 完成：更新 `src/xtrader/runtime/precompile.py`：
+  - 增加 WARN 聚合与落盘字段（`warnings/warn_count/warn_codes`）；
+  - `warn_policy=record_only`：有 WARN 仍成功；
+  - `warn_policy=error`：首个 WARN 升级为失败并中断。
+- 完成：更新 `src/xtrader/runtime/core.py`：
+  - 增加运行参数覆盖入口 `data_source.warn_policy`，优先级高于配置文件；
+  - 完整优先级为：运行参数（CLI 语义） > config > default。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`：
+  - 新增 precompile `record_only/error` 行为用例；
+  - 新增 runtime 覆盖优先级用例（配置 `error` 被覆盖为 `record_only` 成功；覆盖为 `error` 阻断）。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `20 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `python -m py_compile src/xtrader/runtime/errors.py src/xtrader/runtime/precompile.py src/xtrader/runtime/config.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：补齐 `warn_policy` 与 `run_manifest/precompile_report` 审计字段的一致性细节测试，并评估进入 M2 收口。
+
+### 2026-03-31 22:10-22:20 CST
+- 完成：对 `XTR-019` 执行 M2 收口检查，并在 `docs/validation/XTR-019.md` 新增“`M2 收口状态（2026-03-31）`”清单。
+- 完成：逐项映射 `V2-A~V2-F` 到已执行证据命令与结果，形成可审计状态看板。
+- 结论：M2 退出门槛（`P0 + P1` 的 precompile 相关项）已达成，可进入 M3。
+- 验证：`python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）。
+- TODO：根据用户安排进入 M3（执行闭环）实施。
+
+### 2026-03-31 22:20-22:45 CST
+- 完成：按用户要求新增 M3 详细实施计划（Spec）与 M3 详细验证矩阵（Validation），明确 `M3-A~M3-E`、`V3-A~V3-E`。
+- 完成：启动 M3 首轮实现（M3-A + M3-C）并更新 `src/xtrader/backtests/event_driven.py`：
+  - action 快照新增 `status/skip_reason`；
+  - 新增 skipped 归因逻辑（`NO_NEXT_BAR/MARKET_CLOSED/DATA_GAP`）；
+  - summary 新增 `skipped_signal_count`；
+  - diagnostics 新增 `skipped_signals`；
+  - signal timeline 写盘新增 `status/skip_reason` 列。
+- 完成：更新 `tests/unit/backtests/test_event_driven.py`：
+  - 新增尾部信号 `SKIPPED(NO_NEXT_BAR)` 用例；
+  - 新增可执行信号 `FILLED` 用例；
+  - 增加 timeline 列校验（`status/skip_reason`）。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `13 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `20 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `26 passed`
+  - `python -m py_compile src/xtrader/backtests/event_driven.py src/xtrader/runtime/errors.py src/xtrader/runtime/precompile.py src/xtrader/runtime/config.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：继续推进 M3-B/M3-D（成交价与 SL/TP 生效时序、四表一致性校验）并补执行证据。
+
+### 2026-03-31 22:45-23:05 CST
+- 完成：推进 M3 第二批实现（M3-B + M3-D）。
+- 完成：更新 `src/xtrader/backtests/event_driven.py`：
+  - 信号动作执行价改为 `next_bar_open`（执行 bar `open`）；
+  - 增加回测结果一致性校验（`summary.trade_count`、`summary.skipped_signal_count`、`diagnostics.skipped_signals` 与明细一致）。
+- 完成：更新 `tests/unit/backtests/test_event_driven.py`：
+  - 新增“信号动作按 `next_bar_open` 成交”的回归用例；
+  - 与 M3 首轮用例组合，覆盖 `FILLED/SKIPPED` 及 summary 统计闭环。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `14 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `20 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `27 passed`
+  - `python -m py_compile src/xtrader/backtests/event_driven.py src/xtrader/runtime/errors.py src/xtrader/runtime/precompile.py src/xtrader/runtime/config.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：继续补 M3-B 的 SL/TP 生效时序边界反例（入场同 bar 不触发）并完成 M3 收口判定。
+
+### 2026-03-31 23:05-23:20 CST
+- 完成：补强 M3-B 与 M3-D 的边界验证证据。
+- 完成：更新 `tests/unit/backtests/test_event_driven.py`：
+  - 新增“入场同 bar 不触发 `stop_loss`”反例用例（验证退出发生在后续 bar）；
+  - 在输出测试中新增 `summary.skipped_signal_count` 落盘字段断言。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `15 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `20 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `28 passed`
+  - `python -m py_compile src/xtrader/backtests/event_driven.py src/xtrader/runtime/errors.py src/xtrader/runtime/precompile.py src/xtrader/runtime/config.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- TODO：整理 M3 收口状态（V3-A~V3-E）并给出是否可进入 M4 的结论。
+
+### 2026-04-01 00:10-00:25 CST
+- 完成：执行 `XTR-019` 的 M3 收口复核，并同步更新验证结论。
+- 完成：在 `docs/validation/XTR-019.md` 标记 `V3-A~V3-E` 收口状态为完成，补充“`M3 收口状态（2026-04-01）`”与证据映射。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `15 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `20 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `28 passed`
+  - `python -m py_compile src/xtrader/backtests/event_driven.py src/xtrader/runtime/errors.py src/xtrader/runtime/precompile.py src/xtrader/runtime/config.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- 结论：M3 退出门槛已满足，`XTR-019` 可进入 M4（输出契约与审计增强）。
+
+### 2026-04-01 00:25-01:05 CST
+- 完成：按用户要求补充 `XTR-019` 的 M4 实施级计划与验证矩阵。
+- 完成：更新 `docs/specs/XTR-019.md`，新增 `M4-A~M4-F`（目录契约、快照索引、manifest 补齐、降级策略、测试门槛、DoD）。
+- 完成：更新 `docs/validation/XTR-019.md`，新增 `V4-A~V4-E` 验证矩阵，并形成 `M4 收口状态（2026-04-01）`。
+- 完成：实现 `src/xtrader/runtime/core.py` 的 M4 能力：
+  - 生成标准化产物 `artifacts/summary.parquet|signals.parquet|trades.parquet|equity.parquet`；
+  - 生成快照索引 `data_snapshot/raw/{execution_timeframe}.parquet`、`dataset_index.json`、`snapshot_meta.json`；
+  - `run_manifest` 增补 `artifact_refs/data_snapshot_refs/viewer_contract/data_version`；
+  - 引入必需/可选文件判定语义（`INVALID_RUN/NOT_AVAILABLE`）。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`：
+  - 补充 M4 正例断言（标准化产物、dataset_index/snapshot_meta、viewer_contract）；
+  - 新增必需快照缺失反例（`viewer_contract.status=INVALID_RUN`）。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `21 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `28 passed`
+  - `python -m py_compile src/xtrader/runtime/config.py src/xtrader/runtime/precompile.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py src/xtrader/backtests/event_driven.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- 结论：M4 退出门槛已满足，`XTR-019` 可进入 M5（可追溯与非功能收口）。
+
+### 2026-04-01 01:05-01:45 CST
+- 完成：按用户要求新增 `XTR-019` 的 M5 实施级计划与验证矩阵。
+- 完成：更新 `docs/specs/XTR-019.md`，新增 `M5-A~M5-F`（hash 内核、code/data version、性能日志、稳定性、DoD）。
+- 完成：更新 `docs/validation/XTR-019.md`，新增 `V5-A~V5-E` 验证矩阵与 `M5 首轮状态（2026-04-01）`。
+- 完成：实现 `src/xtrader/runtime/hash_utils.py` 共享哈希模块，并让 `runtime/precompile` 统一复用 Canonical hash。
+- 完成：增强 `src/xtrader/runtime/core.py`：
+  - 新增 `code_version` 解析与格式校验（`data_source.code_version` 覆盖，非法 fail-fast）；
+  - 新增 `data_version` 语义哈希（基于 `dataset_index + snapshot_meta` 的规范化内容）；
+  - 将 `code_version/data_version` 同步落盘到 `snapshot_meta/run_manifest/summary/artifacts/summary.parquet`；
+  - 新增 `performance_log`（`elapsed_ms/peak_rss_mb/trials_count/bars_count/status`）。
+- 完成：更新 `tests/unit/runtime/test_runtime_v1.py`：
+  - 增补 M5 正例断言（version 一致性、performance_log 字段）；
+  - 新增负例（非法 `code_version`）与稳定性测试（两次运行 hash 一致）。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `23 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategies/test_feature_engine.py tests/unit/strategies/test_builtin.py` -> `28 passed`
+  - `python -m py_compile src/xtrader/runtime/hash_utils.py src/xtrader/runtime/config.py src/xtrader/runtime/precompile.py src/xtrader/runtime/core.py src/xtrader/runtime/__init__.py src/xtrader/backtests/event_driven.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- 结论：M5 首轮（可追溯闭环 + 性能日志基线）已完成；性能阈值 A/B 与回归阈值压测待下一批执行。
+
+### 2026-04-01 01:45-02:05 CST
+- 完成：执行 M5 下一步专项压测（性能阈值 A/B + 回归阈值）。
+- 完成：新增压测脚本 `scripts/runtime_v1_perf_check.py`：
+  - 场景 A：`90天 + 1 trial + 3 timeframes`；
+  - 场景 B：`1年 + 10 trials + 3 timeframes`；
+  - 输出 `perf_report.json/perf_baseline.json`，并给出阈值与回归判定。
+- 压测结果（最终有效轮次）：
+  - Case A：`elapsed_ms=1404`、`peak_rss_mb=123.91`（通过）
+  - Case B：`elapsed_ms=31353`、`peak_rss_mb=205.21`（通过）
+  - 回归阈值：`elapsed_ratios=[0.7393, 1.0528]`、`within_20pct=true`（通过）
+- 完成：执行 precompile 阈值验证：`PrecompileEngine.compile(...trial_01)` -> `elapsed_ms=2`（通过）。
+- 完成：更新 `docs/validation/XTR-019.md`，将 M5 从“首轮状态”升级为“收口状态（2026-04-01）”，并补齐专项压测证据路径。
+- 结论：M5（P2 发布项）已满足，`XTR-019` 达到发布基线候选。
+
+### 2026-04-01 02:05-02:20 CST
+- 完成：按用户确认执行 `XTR-019` 收尾三项清理。
+- 完成：更新 `docs/validation/XTR-019.md` 的 `Planned Validation` 勾选状态，使模板项与当前里程碑收口状态一致。
+- 完成：新增 CI/Nightly 入口 `.github/workflows/runtime-v1-perf.yml`：
+  - 支持 `workflow_dispatch` + 每日定时执行；
+  - 执行 `scripts/runtime_v1_perf_check.py` 并上传 `perf_report/baseline` 产物。
+- 完成：将稳定性自动化校验升级为“三次同输入运行一致性”
+  - 更新 `tests/unit/runtime/test_runtime_v1.py::test_runtime_core_is_stable_for_traceability_hashes`，断言三次运行 `run_status/config_hash/catalog_hash/data_version` 全部一致。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` -> `23 passed`
+  - `python -m py_compile scripts/runtime_v1_perf_check.py src/xtrader/runtime/core.py src/xtrader/runtime/precompile.py src/xtrader/runtime/hash_utils.py` -> 通过
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- 结论：`XTR-019` 代码与文档收尾项已完成，无新增阻断项。
+
+### 2026-04-01 00:55-01:05 CST
+- 完成：按用户请求梳理 `XTR-019` 全量开发内容与测试映射，并更新系统架构文档。
+- 完成：更新 `docs/system_architecture.md`：
+  - 修正主模块状态（M4/M5/M7）为“Runtime Core v1 backtest-first 已落地、Live 关键能力待补”；
+  - 调整阶段计划，新增 `Phase 0（已完成）XTR-019 M1~M5`；
+  - 新增“XTR-019 Runtime Core v1 落地现状”章节（实现范围、测试映射、当前缺口）。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py tests/unit/backtests/test_event_driven.py` -> `38 passed`
+  - `python scripts/task_guard.py check XTR-019` -> 通过（`✓ Spec & Validation check passed.`）
+- 结论：`XTR-019` 当前实现与验证证据已可通过架构文档快速全局审阅，后续重点转向 Live 执行闭环（OMS/EMS/Event Bus + Ledger 恢复）。
+
+### 2026-04-02 00:20-00:35 CST
+- 完成：创建任务 `XTR-SP-001` 的 Spec/Validation 文档并补齐内容（`docs/specs/XTR-SP-001.md`、`docs/validation/XTR-SP-001.md`），新增 `Open Questions` 用于开发前确认；执行 `python scripts/task_guard.py check XTR-SP-001` 通过。
+- 问题：`XTR-SP-001` 进入实现前仍有 5 个待确认项（schema 落位、是否补 root schema、metadata 扩展策略、错误码口径、边界校验分层）。
+- TODO：
+  1. 等待用户确认 `XTR-SP-001` 的 `Open Questions`。
+  2. 用户确认后进入 schema 文件与 precompile 校验接入开发。
+
+### 2026-04-02 00:35-01:05 CST
+- 完成：按 `XTR-SP-001` 落地 StrategyProfile schema 守门能力：新增 `src/xtrader/strategy_profiles/` 模块（`models/loader/precompile/errors/schema_registry`），并新增 4 份 schema 资产（root + regime/signal/risk）。
+- 完成：新增单测 `tests/unit/strategy_profiles/test_profile_schema_gate.py`，覆盖正例、缺字段、枚举/边界错误、precompile fail-fast 与 schema 文件加载。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_profile_schema_gate.py` 通过（6 passed）；`PYTHONPATH=src python -m py_compile ...` 通过；`python scripts/task_guard.py check XTR-SP-001` 通过。
+- TODO：进入 `XTR-SP-002`（语义校验层：score_fn 签名、reason_code_map 覆盖、classifier refs 一致性、区间冲突/覆盖规则）。
+
+### 2026-04-02 01:05-01:35 CST
+- 完成：按 `XTR-SP-002` 流程落地语义预编译阻断能力（先 Spec/Validation 后编码）。
+- 完成：`StrategyProfilePrecompileEngine` 增加语义校验与产物输出：`required_feature_refs`、`required_indicator_plan_by_tf`、`resolved_input_bindings`、`feature_catalog`。
+- 完成：新增 `score_fn` 冻结注册表（`src/xtrader/strategy_profiles/score_fn_registry.py`），实现 `score_fn` arity/参数白名单/边界校验。
+- 完成：新增关键语义阻断：`UNUSED_CLASSIFIER_INPUT`、`UNDECLARED_CLASSIFIER_REF`、`SIGNAL_PRIORITY_RANK_DUPLICATE`、`MISSING_REASON_CODE_MAPPING`、`SIGNAL_SCORE_RANGE_COVERAGE_GAP` 等。
+- 验证：`PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_profile_schema_gate.py tests/unit/strategy_profiles/test_profile_semantic_precompile.py` 通过（12 passed）；`PYTHONPATH=src pytest -q tests/unit/runtime/test_runtime_v1.py` 通过（23 passed）；`python scripts/task_guard.py check XTR-SP-002` 通过。
+- TODO：进入 `XTR-SP-003`（FeaturePipeline 依赖驱动扩展与多周期对齐输入准备）。
+
+### 2026-04-02 01:35-01:45 CST
+- 完成：将步骤 1-9 固化为统一流程 `任务开发流程`，新增文档 `docs/strategy-memory/task_development_process.md`。
+- 完成：在 `docs/strategy-memory/implementation_tasks_v0.3.md` 增加流程入口引用，确保任务拆分与执行流程一致。
+- 约定：后续当用户明确说“按任务开发流程执行 <TASK_ID>”时，默认按 1->9 顺序推进；若用户要求“先不写代码”，则停在第 4 步（文档守门通过后等待确认）。
+
+### 2026-04-02 01:45-01:50 CST
+- 完成：按目录语义重构文档位置：将全局流程文档 `task_development_process.md` 从 `docs/strategy-memory/` 迁移到 `docs/processes/`。
+- 完成：更新 `docs/strategy-memory/implementation_tasks_v0.3.md` 中的流程引用路径为 `docs/processes/task_development_process.md`。
+- 说明：`implementation_tasks_v0.3.md` 保留在 `strategy-memory`，因为它是 FiveMinRegimeMomentumStrategy 的需求拆分文档（策略域内文档）。
+
+### 2026-04-02 01:50-01:55 CST
+- 完成：新增 `spec/validation` 子流程记忆文档 `docs/processes/spec_validation_process.md`，用于任务开发流程中的文档治理环节（步骤 2/3/4/7/8）。
+- 完成：更新 `docs/processes/task_development_process.md`，增加对子流程文档的引用与子流程调用口令。
+- 约定：未来可直接用“先按 spec/validation 流程处理 <TASK_ID>”触发子流程；用“按任务开发流程执行 <TASK_ID>”触发完整 1-9 步。
+
+### 2026-04-02 01:55-02:10 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-003` 收口（Spec/Validation 已存在并通过守门，进入实现与验证闭环）。
+- 完成：修复 `FeaturePipeline.build_profile_model_df` 的两处问题：
+  - `decision_frame[_REQUIRED_INPUT_COLUMNS]` 改为 `decision_frame[list(_REQUIRED_INPUT_COLUMNS)]`，修复 pandas tuple 取列错误。
+  - `_resolve_physical_col` 修复单输出指标映射：`output_key=value` 正确映射到无后缀物理列（如 `ema_12`），多输出指标继续按 suffix 映射。
+- 完成：新增/更新 profile 模式单测并通过，覆盖单周期、多周期已收盘对齐、staleness 过期置空、缺失 timeframe、错误 feature_ref。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/strategies/test_feature_engine.py` -> `18 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_profile_schema_gate.py tests/unit/strategy_profiles/test_profile_semantic_precompile.py` -> `12 passed`
+  - `python scripts/task_guard.py check XTR-SP-003` -> 通过（`✓ Spec & Validation check passed.`）
+- 完成：更新 `docs/validation/XTR-SP-003.md` 勾选项与执行日志，补齐失败->修复->通过证据链。
+
+### 2026-04-02 02:10-02:35 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-004`（先补齐 Spec/Validation，再实现评分引擎并验证收口）。
+- 完成：新增 `RegimeScoringEngine` 运行时模块 `src/xtrader/strategy_profiles/regime_scoring.py`，实现固定链路：
+  - `RuleEngine`：5 个内置 `score_fn`（`trend/momentum/direction/volume/pullback`）；
+  - `GroupAggregator`：按 `rule_weights` 聚合 `group_scores`；
+  - `RegimeEngine`：`classifier` priority first-match + 条件 AND；
+  - `ScoreSynthesizer`：按 `state_group_weights` 归一化合成 `score_total`，并输出 `state/group_scores/group_weights/rule_scores`。
+- 完成：更新导出 `src/xtrader/strategy_profiles/__init__.py`，暴露 `RegimeScoringEngine` 与 `run_score_fn_series`。
+- 完成：新增单测 `tests/unit/strategy_profiles/test_regime_scoring_engine.py`，覆盖：
+  - profile 正例链路（precompile + feature + regime scoring）；
+  - 5 个 `score_fn` 数学行为与范围约束；
+  - classifier first-match 优先级；
+  - `NO_TRADE_EXTREME` 零权重语义；
+  - 缺失 feature_ref fail-fast。
+- 修复：`volume_score` 中标量 `vol_scale` 使用 `Series.mask` 导致 shape mismatch，改为标量分支逻辑后通过。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_regime_scoring_engine.py` -> `6 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/strategies/test_feature_engine.py tests/unit/strategy_profiles/test_profile_schema_gate.py tests/unit/strategy_profiles/test_profile_semantic_precompile.py` -> `30 passed`
+  - `python scripts/task_guard.py check XTR-SP-004` -> 通过（`✓ Spec & Validation check passed.`）
+- 完成：更新 `docs/validation/XTR-SP-004.md` 勾选项与执行日志，补齐失败->修复->通过证据链。
+
+### 2026-04-02 02:00-02:20 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-005`（先补齐 Spec/Validation 并过守门，再进入代码实现）。
+- 完成：新增 `SignalEngine` 运行时模块 `src/xtrader/strategy_profiles/signal_engine.py`，实现：
+  - `score_range` 命中判定（开闭区间）；
+  - `state_allow/state_deny` 过滤（`state_deny` 优先）；
+  - 全局 `priority_rank` 升序 first-match；
+  - `cooldown_bars + cooldown_scope=symbol_action` 冷却抑制；
+  - `reason_code_map` 输出绑定（`reason=reason_code`）。
+- 完成：更新导出 `src/xtrader/strategy_profiles/__init__.py`，暴露 `SignalEngine` 与 `SignalEngineResult`。
+- 完成：新增单测 `tests/unit/strategy_profiles/test_signal_engine.py`，覆盖：
+  - profile 正例链路；
+  - `score_range` 边界开闭；
+  - `state_deny` 优先；
+  - `priority_rank` first-match；
+  - `symbol_action` 冷却；
+  - 缺失输入列 fail-fast；
+  - 缺失 reason 映射 fail-fast。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_signal_engine.py` -> `7 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_regime_scoring_engine.py tests/unit/strategies/test_feature_engine.py tests/unit/strategy_profiles/test_profile_schema_gate.py tests/unit/strategy_profiles/test_profile_semantic_precompile.py` -> `36 passed`
+  - `PYTHONPATH=src python -m py_compile src/xtrader/strategy_profiles/signal_engine.py tests/unit/strategy_profiles/test_signal_engine.py` -> 通过
+  - `python scripts/task_guard.py check XTR-SP-005` -> 通过（`✓ Spec & Validation check passed.`）
+- 完成：更新 `docs/validation/XTR-SP-005.md` 勾选项与执行日志，补齐证据链。
+
+### 2026-04-02 02:20-02:35 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-006`（先补齐 Spec/Validation 并过守门，再进入代码实现）。
+- 完成：新增 `RiskEngine` 运行时模块 `src/xtrader/strategy_profiles/risk_engine.py`，实现：
+  - `size_model=fixed_fraction`；
+  - `stop_model=fixed_pct|atr_multiple`；
+  - `take_profit_model=fixed_pct|rr_multiple`；
+  - 输出绝对价格位 `stop_loss/take_profit`；
+  - `daily_loss_limit/max_concurrent_positions` 最小 guard 钩子；
+  - `reason=reason_code` 兼容输出口径。
+- 完成：更新导出 `src/xtrader/strategy_profiles/__init__.py`，暴露 `RiskEngine` 与 `RiskEngineResult`。
+- 完成：新增单测 `tests/unit/strategy_profiles/test_risk_engine.py`，覆盖：
+  - fixed_pct 正例；
+  - atr+rr 正例；
+  - action-size 合约；
+  - portfolio guards；
+  - 缺失 `close` fail-fast；
+  - 缺失 `atr` fail-fast。
+- 修复：`itertuples` 对 `__atr__` 列名重写导致 ATR 读取 NaN；已改为 `atr_runtime_value`。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_risk_engine.py` -> `6 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_signal_engine.py tests/unit/strategy_profiles/test_regime_scoring_engine.py tests/unit/strategies/test_feature_engine.py tests/unit/strategy_profiles/test_profile_schema_gate.py tests/unit/strategy_profiles/test_profile_semantic_precompile.py` -> `43 passed`
+  - `PYTHONPATH=src python -m py_compile src/xtrader/strategy_profiles/risk_engine.py tests/unit/strategy_profiles/test_risk_engine.py` -> 通过
+  - `python scripts/task_guard.py check XTR-SP-006` -> 通过（`✓ Spec & Validation check passed.`）
+- 完成：更新 `docs/validation/XTR-SP-006.md` 勾选项与执行日志，补齐失败->修复->通过证据链。
+
+### 2026-04-02 02:35-02:50 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-007`（先补齐 Spec/Validation 并过守门，再进入端到端串联实现）。
+- 完成：新增 `ProfileActionStrategy`（`src/xtrader/strategies/builtin_strategies/profile_action.py`），打通：
+  - `FeaturePipeline -> RegimeScoringEngine -> SignalEngine -> RiskEngine -> ActionStrategyResult`。
+- 完成：更新导出入口：
+  - `src/xtrader/strategies/builtin_strategies/__init__.py`
+  - `src/xtrader/strategies/builtin.py`
+  - `src/xtrader/strategies/__init__.py`
+- 完成：新增单测：
+  - `tests/unit/strategies/test_profile_action_strategy.py`（e2e smoke、schema、diagnostics、非法 profile）
+  - `tests/unit/strategies/test_builtin.py`（新增 ProfileActionStrategy 导出验证）
+- 修复：`XTR-SP-007` 实现后触发一处循环依赖（`strategy_profiles.risk_engine` 依赖 `strategies.base` 间接回环到 `profile_action`）。
+  - 处理：在 `src/xtrader/strategy_profiles/risk_engine.py` 移除 `TradeAction` 跨包依赖，改本地动作常量，打断循环。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/strategies/test_profile_action_strategy.py tests/unit/strategies/test_builtin.py` -> `5 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/strategy_profiles/test_risk_engine.py tests/unit/strategy_profiles/test_signal_engine.py tests/unit/strategy_profiles/test_regime_scoring_engine.py tests/unit/strategies/test_profile_action_strategy.py tests/unit/strategies/test_builtin.py` -> `24 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/strategies/test_feature_engine.py tests/unit/strategy_profiles/test_profile_schema_gate.py tests/unit/strategy_profiles/test_profile_semantic_precompile.py` -> `30 passed`
+  - `PYTHONPATH=src python -m py_compile src/xtrader/strategies/builtin_strategies/profile_action.py src/xtrader/strategies/builtin.py src/xtrader/strategies/builtin_strategies/__init__.py src/xtrader/strategies/__init__.py tests/unit/strategies/test_profile_action_strategy.py tests/unit/strategies/test_builtin.py` -> 通过
+  - `python scripts/task_guard.py check XTR-SP-007` -> 通过（`✓ Spec & Validation check passed.`）
+- 完成：更新 `docs/validation/XTR-SP-007.md` 勾选项与执行日志，补齐失败->修复->通过证据链。
+
+### 2026-04-02 02:40-03:00 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-008`（先补齐 Spec/Validation 并过守门，再执行入口收敛改造）。
+- 完成：主入口去除 `ThresholdIntradayStrategy` 导出，收敛到 profile 主链路：
+  - `src/xtrader/strategies/__init__.py`
+  - `src/xtrader/strategies/builtin.py`
+  - `src/xtrader/strategies/builtin_strategies/__init__.py`
+- 保留：legacy 兼容路径不删除（`src/xtrader/strategies/intraday.py` 仍可导入 `ThresholdIntradayStrategy`）。
+- 完成：更新测试导入与断言：
+  - `tests/unit/strategies/test_builtin.py`：新增“主入口/内建入口不导出 Threshold”断言；
+  - `tests/unit/strategies/test_intraday.py`：改为 legacy 路径导入 Threshold；
+  - `tests/unit/backtests/test_event_driven.py`：改为 legacy 路径导入 Threshold。
+- 验证：
+  - `PYTHONPATH=src pytest -q tests/unit/strategies/test_builtin.py tests/unit/strategies/test_intraday.py tests/unit/strategies/test_profile_action_strategy.py` -> `8 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py tests/unit/strategy_profiles/test_profile_schema_gate.py tests/unit/strategy_profiles/test_profile_semantic_precompile.py tests/unit/strategy_profiles/test_regime_scoring_engine.py tests/unit/strategy_profiles/test_signal_engine.py tests/unit/strategy_profiles/test_risk_engine.py tests/unit/strategies/test_feature_engine.py` -> `64 passed`
+  - `PYTHONPATH=src python -m py_compile src/xtrader/strategies/__init__.py src/xtrader/strategies/builtin.py src/xtrader/strategies/builtin_strategies/__init__.py tests/unit/strategies/test_builtin.py tests/unit/strategies/test_intraday.py tests/unit/backtests/test_event_driven.py` -> 通过
+  - `python scripts/task_guard.py check XTR-SP-008` -> 通过（`✓ Spec & Validation check passed.`）
+- 完成：更新 `docs/validation/XTR-SP-008.md` 勾选项与执行日志，补齐证据链。
+
+### 2026-04-02 03:00-03:20 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-009`（先创建并完善 Spec/Validation，再编码与验证）。
+- 完成：新增 `ProfileActionStrategy` 的真实数据 smoke 回测脚本：
+  - `scripts/run_profile_action_backtest_smoke.py`
+  - 支持本地 `BTCUSDT 5m` 数据读取、profile 生成动作、event-driven 回测、标准产物落盘。
+- 完成：新增 E2E 产物单测：
+  - `tests/unit/backtests/test_event_driven.py::test_profile_action_strategy_backtest_smoke_writes_baseline_artifacts`
+  - 覆盖 `summary/diagnostics/trades/equity/signal_execution/run_manifest` 关键文件存在性。
+- 完成：真实数据 smoke 运行（固定窗口）并产出 baseline：
+  - 命令：`PYTHONPATH=src python scripts/run_profile_action_backtest_smoke.py --start 2026-01-01T00:00:00Z --end 2026-01-15T00:00:00Z --run-id 20260402T030500Z_xtr_sp_009_smoke`
+  - 结果：`status=SUCCESS`，`bars=4032`，`actions=4032`，`trades=95`
+  - 指标：`win_rate=0.12631578947368421`，`max_drawdown=-0.003086890324540903`，`net_return=-0.0029697348022525993`
+  - 产物目录：`reports/backtests/strategy/profile_action/20260402T030500Z_xtr_sp_009_smoke`
+- 验证：
+  - `python scripts/task_guard.py check XTR-SP-009`（编码前） -> 通过
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py -k "profile_action_strategy_backtest_smoke_writes_baseline_artifacts or strategy_scoped_report_root_and_outputs"` -> `2 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/strategies/test_profile_action_strategy.py` -> `3 passed`
+  - `PYTHONPATH=src pytest -q tests/unit/backtests/test_event_driven.py` -> `16 passed`
+  - `PYTHONPATH=src python -m py_compile scripts/run_profile_action_backtest_smoke.py tests/unit/backtests/test_event_driven.py` -> 通过
+  - `python scripts/task_guard.py check XTR-SP-009`（交付前） -> 通过（`✓ Spec & Validation check passed.`）
+
+### 2026-04-02 03:20-03:40 CST
+- 完成：按“任务开发流程”执行 `XTR-SP-010`（文档与运维收口）。
+- 完成：新增 profile 最小模板：
+  - `configs/strategy-profiles/templates/profile_v0.3.minimal.json`
+  - 用于新策略快速起步与 precompile 验证。
+- 完成：新增统一操作手册：
+  - `docs/strategy_profile_playbook.md`
+  - 覆盖“新增 profile -> precompile -> smoke 回测 -> 产物检查 -> 常见错误码排查”完整闭环。
+- 完成：对齐架构与运行管理文档：
+  - `docs/system_architecture.md` 新增“Profile 主链路约定（XTR-SP）”，明确：
+    - 主链路：`FeaturePipeline -> RegimeScoringEngine -> SignalEngine -> RiskEngine -> Action Output`
+    - 路径语义：研究回测看 `reports/backtests/strategy/...`，runtime 编排看 `runs/...`
+  - `docs/strategy_runtime_management.md` 新增与 XTR-SP 操作衔接段落与模板入口。
+- 验证：
+  - `python scripts/task_guard.py check XTR-SP-010`（文档实现前） -> 通过
+  - `PYTHONPATH=src python - <<'PY' ... StrategyProfilePrecompileEngine().compile(...) ... PY`
+    - `configs/strategy-profiles/five_min_regime_momentum/v0.3.json -> SUCCESS`
+    - `configs/strategy-profiles/templates/profile_v0.3.minimal.json -> SUCCESS`
+  - `PYTHONPATH=src python scripts/run_profile_action_backtest_smoke.py --profile configs/strategy-profiles/five_min_regime_momentum/v0.3.json --start 2026-01-01T00:00:00Z --end 2026-01-07T00:00:00Z --run-id 20260402T041500Z_xtr_sp_010_smoke`
+    - `status=SUCCESS`，产物目录：`reports/backtests/strategy/profile_action/20260402T041500Z_xtr_sp_010_smoke`
+  - `python scripts/task_guard.py check XTR-SP-010`（交付前） -> 通过（`✓ Spec & Validation check passed.`）
