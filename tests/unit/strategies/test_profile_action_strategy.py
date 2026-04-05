@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from xtrader.strategies import ProfileActionStrategy, StrategyContext
+from xtrader.strategies.feature_engine.pipeline import FeaturePipeline
 
 
 def _bars_5m(rows: int = 420) -> pd.DataFrame:
@@ -80,3 +81,26 @@ def test_profile_action_strategy_invalid_profile_negative() -> None:
     del broken["signal_spec"]["reason_code_map"]["long_breakout_v1"]
     with pytest.raises(ValueError, match=r"XTRSP007::PROFILE_PRECOMPILE_FAILED::MISSING_REASON_CODE_MAPPING::"):
         ProfileActionStrategy(profile_config=broken)
+
+
+def test_profile_action_strategy_avoids_second_feature_build_for_trace() -> None:
+    class _CountingPipeline(FeaturePipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.build_model_df_calls = 0
+
+        def build_model_df(self, *, bars_df: pd.DataFrame, indicator_plan: list[dict[str, object]]) -> pd.DataFrame:
+            self.build_model_df_calls += 1
+            return super().build_model_df(bars_df=bars_df, indicator_plan=indicator_plan)
+
+    strategy = ProfileActionStrategy()
+    counting_pipeline = _CountingPipeline()
+    strategy._feature_pipeline = counting_pipeline
+    context = StrategyContext(
+        as_of_time=datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc),
+        universe=("BTCUSDT",),
+        inputs={"5m": _bars_5m(rows=120)},
+        meta={"account_context": {"equity": 5_000.0}},
+    )
+    strategy.generate_actions(context)
+    assert counting_pipeline.build_model_df_calls == len(strategy._required_timeframes)

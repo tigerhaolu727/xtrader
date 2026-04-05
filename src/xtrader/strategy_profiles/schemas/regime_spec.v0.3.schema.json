@@ -41,6 +41,13 @@
       "additionalProperties": {
         "$ref": "#/$defs/group_weight_map"
       }
+    },
+    "state_score_adjustments": {
+      "type": "object",
+      "default": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/state_score_adjustment"
+      }
     }
   },
   "$defs": {
@@ -216,15 +223,45 @@
             "momentum_score",
             "direction_score",
             "volume_score",
-            "pullback_score"
+            "pullback_score",
+            "tf_points_score_v1"
           ]
         },
         "input_refs": {
           "type": "array",
-          "minItems": 1,
+          "default": [],
           "items": {
             "$ref": "#/$defs/feature_ref"
           }
+        },
+        "input_map": {
+          "type": "object",
+          "default": {},
+          "minProperties": 0,
+          "additionalProperties": {
+            "$ref": "#/$defs/feature_ref"
+          }
+        },
+        "long_conditions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/tf_points_condition"
+          }
+        },
+        "short_conditions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/tf_points_condition"
+          }
+        },
+        "max_abs_points": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0.0
         },
         "params": {
           "type": "object",
@@ -256,6 +293,9 @@
           "type": "string",
           "minLength": 1
         },
+        "timeframe": {
+          "$ref": "#/$defs/timeframe"
+        },
         "rules": {
           "type": "array",
           "minItems": 1,
@@ -274,6 +314,45 @@
         "enabled": {
           "type": "boolean",
           "default": true
+        }
+      }
+    },
+    "tf_points_condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "points",
+        "expr"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "points": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "expr": {
+          "type": "object"
+        }
+      }
+    },
+    "state_score_adjustment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fn"
+      ],
+      "properties": {
+        "fn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object",
+          "default": {}
         }
       }
     },

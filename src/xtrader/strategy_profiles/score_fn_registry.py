@@ -52,6 +52,11 @@ SCORE_FN_REGISTRY_V03: dict[str, ScoreFnSpec] = {
         input_roles=("close", "ema_fast", "ema_slow", "atr_main"),
         params={"dev_scale": ParamSpec(kind="number", minimum=0.0, exclusive_minimum=True)},
     ),
+    # tf_points_score_v1 input validation is handled by profile precompile using input_map and condition DSL.
+    "tf_points_score_v1": ScoreFnSpec(
+        input_roles=(),
+        params={},
+    ),
 }
 
 

@@ -70,11 +70,19 @@ def test_registry_has_all_v1_families() -> None:
         "bollinger",
         "dmi",
         "ema",
+        "frama",
+        "ht_trendline",
+        "kama",
         "kd",
         "ma",
         "macd",
+        "macd_state",
+        "mama",
+        "mfi",
         "rsi",
         "stddev",
+        "support_proximity",
+        "trix",
         "volume_ma",
         "volume_variation",
         "wr",
@@ -209,7 +217,23 @@ def test_indicator_compute_returns_dataframe_for_all_families() -> None:
     registry = build_default_indicator_registry()
     for family in registry.families():
         indicator = registry.get(family)
-        result = indicator.compute(bars, {})
+        if family == "macd_state":
+            macd = registry.get("macd")
+            source_resolved = macd.resolve_params({"fast": 12, "slow": 26, "signal": 9})
+            source_cols = macd.build_output_columns(source_resolved, suffixes=("line", "signal", "hist"))
+            source_frame = macd.compute(bars, source_resolved)
+            input_frame = pd.concat([bars, source_frame], axis=1)
+            result = indicator.compute(
+                input_frame,
+                {
+                    "source_instance_id": "macd_main",
+                    "__source_line_col": source_cols[0],
+                    "__source_signal_col": source_cols[1],
+                    "__source_hist_col": source_cols[2],
+                },
+            )
+        else:
+            result = indicator.compute(bars, {})
         assert isinstance(result, pd.DataFrame)
         assert len(result.index) == len(bars.index)
 
@@ -228,6 +252,277 @@ def test_non_macd_suffix_dictionary_columns() -> None:
     assert {"bollinger_20_2.30_mid", "bollinger_20_2.30_up", "bollinger_20_2.30_low"}.issubset(features.columns)
     assert {"kd_9_3_3_k", "kd_9_3_3_d", "kd_9_3_3_j"}.issubset(features.columns)
     assert {"dmi_14_14_plus_di", "dmi_14_14_minus_di", "dmi_14_14_adx"}.issubset(features.columns)
+
+
+def test_macd_state_indicator_outputs_expected_columns_and_flags() -> None:
+    bars = _bars(rows=260)
+    pipeline = FeaturePipeline()
+    plan = [
+        {
+            "instance_id": "macd_main",
+            "family": "macd",
+            "params": {
+                "fast": 12,
+                "slow": 26,
+                "signal": 9,
+            },
+        },
+        {
+            "instance_id": "macd_state_main",
+            "family": "macd_state",
+            "params": {
+                "source_instance_id": "macd_main",
+                "near_gap_pct": 0.01,
+                "near_gap_abs": 0.0,
+                "slope_min": 0.0,
+                "narrow_bars": 2,
+            },
+        }
+    ]
+
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+
+    expected_cols = {
+        "macd_state_macd_main_0.01_0_0_2_state_code_num",
+        "macd_state_macd_main_0.01_0_0_2_near_cross_num",
+        "macd_state_macd_main_0.01_0_0_2_near_golden_flag",
+        "macd_state_macd_main_0.01_0_0_2_near_dead_flag",
+        "macd_state_macd_main_0.01_0_0_2_reject_long_flag",
+        "macd_state_macd_main_0.01_0_0_2_reject_short_flag",
+        "macd_state_macd_main_0.01_0_0_2_gap",
+        "macd_state_macd_main_0.01_0_0_2_gap_slope",
+        "macd_state_macd_main_0.01_0_0_2_gap_pct",
+        "macd_state_macd_main_0.01_0_0_2_green_narrow_2_flag",
+        "macd_state_macd_main_0.01_0_0_2_red_narrow_2_flag",
+    }
+    assert expected_cols.issubset(set(features.columns))
+    near_cross = features["macd_state_macd_main_0.01_0_0_2_near_cross_num"].dropna()
+    assert not near_cross.empty
+    assert set(near_cross.unique()).issubset({-1.0, 0.0, 1.0})
+    assert float(near_cross.abs().sum()) >= 1.0
+
+
+def test_kama_indicator_outputs_column_and_warmup() -> None:
+    bars = _bars(rows=240)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "kama_fast", "family": "kama", "params": {"er_period": 10, "fast_period": 2, "slow_period": 30}}]
+
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+    col = "kama_10_2_30"
+    assert col in features.columns
+    first_valid = features[col].first_valid_index()
+    assert first_valid is not None and first_valid >= 10
+    assert features[col].dropna().shape[0] >= 100
+
+
+def test_trix_indicator_outputs_column_and_finite_values() -> None:
+    bars = _bars(rows=320)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "trix_15", "family": "trix", "params": {"period": 15}}]
+
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+    col = "trix_15"
+    assert col in features.columns
+    valid = features[col].dropna()
+    assert not valid.empty
+    assert valid.map(lambda x: pd.notna(x)).all()
+
+
+def test_mfi_indicator_outputs_column_and_range() -> None:
+    bars = _bars(rows=260)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "mfi_14", "family": "mfi", "params": {"period": 14}}]
+
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+    col = "mfi_14"
+    assert col in features.columns
+    valid = features[col].dropna()
+    assert not valid.empty
+    assert float(valid.min()) >= 0.0
+    assert float(valid.max()) <= 100.0
+
+
+def test_mama_indicator_outputs_dual_columns() -> None:
+    bars = _bars(rows=260)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "mama_main", "family": "mama", "params": {"fast_limit": 0.5, "slow_limit": 0.05}}]
+
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+    col_mama = "mama_0.50_0.05_mama"
+    col_fama = "mama_0.50_0.05_fama"
+    assert col_mama in features.columns
+    assert col_fama in features.columns
+    assert not features[col_mama].dropna().empty
+    assert not features[col_fama].dropna().empty
+
+
+def test_ht_trendline_indicator_outputs_column() -> None:
+    bars = _bars(rows=200)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "htl", "family": "ht_trendline", "params": {}}]
+
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+    col = "ht_trendline"
+    assert col in features.columns
+    assert not features[col].dropna().empty
+
+
+def test_frama_indicator_outputs_column_and_warmup() -> None:
+    bars = _bars(rows=260)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "frama_16", "family": "frama", "params": {"window": 16}}]
+
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+    col = "frama_16_0.01_1"
+    assert col in features.columns
+    first_valid = features[col].first_valid_index()
+    assert first_valid is not None and first_valid >= 15
+    assert not features[col].dropna().empty
+
+
+def test_frama_rejects_odd_window() -> None:
+    bars = _bars(rows=120)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "frama_bad", "family": "frama", "params": {"window": 15}}]
+    with pytest.raises(ValueError, match=r"XTR018::PARAM_OUT_OF_RANGE::frama.window must be even"):
+        pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+
+
+def test_profile_feature_pipeline_resolves_macd_state_suffix_ref() -> None:
+    bars_5m = _bars(rows=180)
+    pipeline = FeaturePipeline()
+    result = pipeline.build_profile_model_df(
+        bars_by_timeframe={"5m": bars_5m},
+        required_indicator_plan_by_tf={
+            "5m": [
+                {"instance_id": "macd_main", "family": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}},
+                {
+                    "instance_id": "ms",
+                    "family": "macd_state",
+                    "params": {"source_instance_id": "macd_main"},
+                }
+            ]
+        },
+        required_feature_refs=["f:5m:ms:near_golden_flag", "f:5m:ms:state_code_num"],
+        decision_timeframe="5m",
+        alignment_policy={"mode": "ffill_last_closed", "max_staleness_bars_by_tf": {}},
+    )
+    assert "f:5m:ms:near_golden_flag" in result.columns
+    assert "f:5m:ms:state_code_num" in result.columns
+
+
+def test_macd_state_without_source_instance_rejected() -> None:
+    bars = _bars(rows=120)
+    pipeline = FeaturePipeline()
+    plan = [{"instance_id": "ms", "family": "macd_state", "params": {"source_instance_id": "missing"}}]
+    with pytest.raises(ValueError, match=r"XTR018::PLAN_SOURCE_INSTANCE_NOT_FOUND::"):
+        pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+
+
+def test_macd_state_source_must_be_computed_first() -> None:
+    bars = _bars(rows=120)
+    pipeline = FeaturePipeline()
+    plan = [
+        {"instance_id": "ms", "family": "macd_state", "params": {"source_instance_id": "macd_main"}},
+        {"instance_id": "macd_main", "family": "macd", "params": {"fast": 12, "slow": 26, "signal": 9}},
+    ]
+    with pytest.raises(ValueError, match=r"XTR018::PLAN_SOURCE_ORDER_INVALID::"):
+        pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+
+
+def test_support_proximity_outputs_expected_columns_and_codes() -> None:
+    bars = _bars(rows=260)
+    pipeline = FeaturePipeline()
+    plan = [
+        {
+            "instance_id": "sp_main",
+            "family": "support_proximity",
+            "params": {
+                "lookback": 20,
+                "round_step": 100.0,
+                "strong_pct": 0.3,
+                "medium_pct": 0.8,
+                "weak_pct": 1.5,
+            },
+        }
+    ]
+    features = pipeline.compute_features(bars_df=bars, indicator_plan=plan)
+    expected_cols = {
+        "support_proximity_20_100_0.30_0.80_1.50_nearest_support_level",
+        "support_proximity_20_100_0.30_0.80_1.50_nearest_resistance_level",
+        "support_proximity_20_100_0.30_0.80_1.50_support_distance_pct",
+        "support_proximity_20_100_0.30_0.80_1.50_resistance_distance_pct",
+        "support_proximity_20_100_0.30_0.80_1.50_support_strength_code",
+        "support_proximity_20_100_0.30_0.80_1.50_resistance_strength_code",
+    }
+    assert expected_cols.issubset(set(features.columns))
+    support_code = features["support_proximity_20_100_0.30_0.80_1.50_support_strength_code"].dropna()
+    assert not support_code.empty
+    assert set(support_code.unique()).issubset({0.0, 1.0, 2.0, 3.0})
+
+
+def test_profile_feature_pipeline_resolves_support_proximity_suffix_ref() -> None:
+    bars_5m = _bars(rows=220)
+    pipeline = FeaturePipeline()
+    result = pipeline.build_profile_model_df(
+        bars_by_timeframe={"5m": bars_5m},
+        required_indicator_plan_by_tf={
+            "5m": [
+                {
+                    "instance_id": "sp",
+                    "family": "support_proximity",
+                    "params": {"lookback": 20, "round_step": 100.0},
+                }
+            ]
+        },
+        required_feature_refs=["f:5m:sp:support_strength_code", "f:5m:sp:resistance_distance_pct"],
+        decision_timeframe="5m",
+        alignment_policy={"mode": "ffill_last_closed", "max_staleness_bars_by_tf": {}},
+    )
+    assert "f:5m:sp:support_strength_code" in result.columns
+    assert "f:5m:sp:resistance_distance_pct" in result.columns
+
+
+def test_profile_feature_pipeline_resolves_mama_suffix_ref() -> None:
+    bars_5m = _bars(rows=220)
+    pipeline = FeaturePipeline()
+    result = pipeline.build_profile_model_df(
+        bars_by_timeframe={"5m": bars_5m},
+        required_indicator_plan_by_tf={
+            "5m": [
+                {
+                    "instance_id": "mama_main",
+                    "family": "mama",
+                    "params": {"fast_limit": 0.5, "slow_limit": 0.05},
+                }
+            ]
+        },
+        required_feature_refs=["f:5m:mama_main:mama", "f:5m:mama_main:fama"],
+        decision_timeframe="5m",
+        alignment_policy={"mode": "ffill_last_closed", "max_staleness_bars_by_tf": {}},
+    )
+    assert "f:5m:mama_main:mama" in result.columns
+    assert "f:5m:mama_main:fama" in result.columns
+
+
+def test_support_proximity_invalid_threshold_order_rejected() -> None:
+    bars = _bars(rows=120)
+    pipeline = FeaturePipeline()
+    plan = [
+        {
+            "instance_id": "sp_bad",
+            "family": "support_proximity",
+            "params": {
+                "lookback": 20,
+                "round_step": 100.0,
+                "strong_pct": 1.2,
+                "medium_pct": 0.8,
+                "weak_pct": 1.5,
+            },
+        }
+    ]
+    with pytest.raises(ValueError, match=r"XTR018::PARAM_OUT_OF_RANGE::support_proximity threshold order requires"):
+        pipeline.compute_features(bars_df=bars, indicator_plan=plan)
 
 
 def test_feature_engine_golden_snapshot_alignment() -> None:
@@ -288,6 +583,27 @@ def test_profile_feature_pipeline_single_tf_positive() -> None:
     assert len(result.index) == len(bars_5m.index)
     assert "f:5m:ema_12:value" in result.columns
     assert result["timestamp"].equals(bars_5m["timestamp"])
+
+
+def test_profile_feature_pipeline_can_include_decision_tf_feature_superset() -> None:
+    bars_5m = _bars(rows=80)
+    pipeline = FeaturePipeline()
+    result = pipeline.build_profile_model_df(
+        bars_by_timeframe={"5m": bars_5m},
+        required_indicator_plan_by_tf={
+            "5m": [
+                {"instance_id": "ema_12", "family": "ema", "params": {"period": 12}},
+                {"instance_id": "rsi_14", "family": "rsi", "params": {"period": 14}},
+            ]
+        },
+        required_feature_refs=["f:5m:ema_12:value"],
+        decision_timeframe="5m",
+        alignment_policy={"mode": "ffill_last_closed", "max_staleness_bars_by_tf": {}},
+        include_decision_tf_features=True,
+    )
+    assert "f:5m:ema_12:value" in result.columns
+    assert "ema_12" in result.columns
+    assert "rsi_14" in result.columns
 
 
 def test_profile_feature_pipeline_multi_tf_alignment_uses_last_closed() -> None:

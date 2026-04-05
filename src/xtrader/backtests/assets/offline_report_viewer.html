@@ -973,6 +973,95 @@
 
       const _formatUtc = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : "NA");
 
+      const _asObject = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
+
+      const _tryParseJson = (value) => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === "object") return value;
+        const text = String(value).trim();
+        if (!text) return null;
+        try {
+          return JSON.parse(text);
+        } catch (_err) {
+          return null;
+        }
+      };
+
+      const _deriveConditionHits = (ruleObj) => {
+        const direct = ruleObj.condition_hits;
+        if (direct !== undefined) return direct;
+        const ruleTrace = _asObject(ruleObj.rule_trace);
+        const mergedHits = new Set();
+        const mergedResults = {};
+        let hasData = false;
+        Object.keys(ruleTrace).forEach((ruleId) => {
+          const item = _asObject(ruleTrace[ruleId]);
+          const conditionHits = _asObject(item.condition_hits);
+          const hits = Array.isArray(conditionHits.hits) ? conditionHits.hits : [];
+          const results = _asObject(conditionHits.results);
+          if (hits.length > 0 || Object.keys(results).length > 0) hasData = true;
+          hits.forEach((key) => mergedHits.add(String(key)));
+          Object.keys(results).forEach((key) => {
+            mergedResults[String(key)] = Boolean(mergedResults[String(key)] || results[key]);
+          });
+        });
+        if (!hasData) return null;
+        return { hits: Array.from(mergedHits.values()), results: mergedResults };
+      };
+
+      const _fmtNum = (value) => {
+        const n = toNum(value);
+        return Number.isFinite(n) ? n.toFixed(6) : "N/A";
+      };
+
+      const _summarizeSignalV1Evidence = (decisionRow) => {
+        const ruleObj = _asObject(_tryParseJson(decisionRow && decisionRow.ruleResultsJson));
+        const signalObj = _asObject(_tryParseJson(decisionRow && decisionRow.signalDecisionJson));
+        const conditionHits = _deriveConditionHits(ruleObj);
+        const gateResults = Array.isArray(signalObj.gate_results) ? signalObj.gate_results : null;
+        const scoreAdjustment = _asObject(ruleObj.score_adjustment);
+        const macdState = _asObject(ruleObj.macd_state);
+
+        let conditionText = "N/A";
+        if (conditionHits && typeof conditionHits === "object") {
+          const hitList = Array.isArray(conditionHits.hits) ? conditionHits.hits.map((x) => String(x)) : [];
+          const results = _asObject(conditionHits.results);
+          const hitCount = hitList.length > 0 ? hitList.length : Object.values(results).filter((x) => Boolean(x)).length;
+          const sample = hitList.slice(0, 6).join(", ");
+          conditionText = "hit_count=" + hitCount + (sample ? (" | hits=" + sample) : "");
+        }
+
+        let gateText = "N/A";
+        if (gateResults) {
+          const passed = gateResults.filter((g) => _asObject(g).passed).map((g) => String(_asObject(g).gate_id || ""));
+          gateText = "passed=" + (passed.length ? passed.join(", ") : "none") + " | total=" + gateResults.length;
+        }
+
+        let scoreAdjText = "N/A";
+        if (Object.keys(scoreAdjustment).length > 0) {
+          scoreAdjText =
+            "base=" + _fmtNum(scoreAdjustment.score_base)
+            + " | adj=" + _fmtNum(scoreAdjustment.score_adjustment)
+            + " | final=" + _fmtNum(scoreAdjustment.score_final);
+        }
+
+        let macdText = "N/A";
+        if (Object.keys(macdState).length > 0) {
+          macdText =
+            "state_code=" + String(macdState.state_code || "N/A")
+            + " | near_cross=" + String(macdState.near_cross || "N/A")
+            + " | reject_long=" + String(macdState.reject_long !== undefined ? macdState.reject_long : "N/A")
+            + " | reject_short=" + String(macdState.reject_short !== undefined ? macdState.reject_short : "N/A");
+        }
+
+        return {
+          conditionText,
+          gateText,
+          scoreAdjText,
+          macdText,
+        };
+      };
+
       const _effectiveTradeSymbol = (row) => {
         const fromRow = String(row && row.symbol || "").toUpperCase();
         if (fromRow) return fromRow;
@@ -1089,6 +1178,7 @@
           }
           const first = matches[0];
           const score = Number.isFinite(first.scoreTotal) ? first.scoreTotal.toFixed(6) : "NA";
+          const evidence = _summarizeSignalV1Evidence(first);
           const matchNote = matches.length > 1 ? ("<div class='status'>命中 " + matches.length + " 条，请在独立页面精确筛选。</div>") : "";
           return (
             "<div class='card'>"
@@ -1097,6 +1187,10 @@
             + "<div class='detail-item'><strong>state:</strong> " + String(first.state || "NA") + "</div>"
             + "<div class='detail-item'><strong>score_total:</strong> " + score + "</div>"
             + "<div class='detail-item'><strong>reason:</strong> " + String(first.reason || "NA") + "</div>"
+            + "<div class='detail-item'><strong>condition_hits:</strong> " + String(evidence.conditionText) + "</div>"
+            + "<div class='detail-item'><strong>gate_results:</strong> " + String(evidence.gateText) + "</div>"
+            + "<div class='detail-item'><strong>score_adjustment:</strong> " + String(evidence.scoreAdjText) + "</div>"
+            + "<div class='detail-item'><strong>macd_state:</strong> " + String(evidence.macdText) + "</div>"
             + matchNote
             + "<div><button class='trace-open-btn' type='button' data-phase-key='" + phase.key + "' data-execution-ms='" + phase.timeMs + "' data-action='" + phase.action + "'>在独立页面查看完整决策链</button></div>"
             + "</div>"

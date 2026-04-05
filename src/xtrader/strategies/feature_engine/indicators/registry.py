@@ -11,12 +11,20 @@ from xtrader.strategies.feature_engine.indicators.oscillator.rsi import RSIIndic
 from xtrader.strategies.feature_engine.indicators.oscillator.wr import WRIndicator
 from xtrader.strategies.feature_engine.indicators.trend.dmi import DMIIndicator
 from xtrader.strategies.feature_engine.indicators.trend.ema import EMAIndicator
+from xtrader.strategies.feature_engine.indicators.trend.frama import FRAMAIndicator
+from xtrader.strategies.feature_engine.indicators.trend.ht_trendline import HTTrendlineIndicator
+from xtrader.strategies.feature_engine.indicators.trend.kama import KAMAIndicator
 from xtrader.strategies.feature_engine.indicators.trend.ma import MAIndicator
 from xtrader.strategies.feature_engine.indicators.trend.macd import MACDIndicator
+from xtrader.strategies.feature_engine.indicators.trend.macd_state import MACDStateIndicator
+from xtrader.strategies.feature_engine.indicators.trend.mama import MAMAIndicator
+from xtrader.strategies.feature_engine.indicators.trend.support_proximity import SupportProximityIndicator
+from xtrader.strategies.feature_engine.indicators.trend.trix import TRIXIndicator
 from xtrader.strategies.feature_engine.indicators.volatility.atr import ATRIndicator
 from xtrader.strategies.feature_engine.indicators.volatility.atr_pct_rank import ATRPctRankIndicator
 from xtrader.strategies.feature_engine.indicators.volatility.bollinger import BollingerIndicator
 from xtrader.strategies.feature_engine.indicators.volatility.stddev import StdDevIndicator
+from xtrader.strategies.feature_engine.indicators.volume.mfi import MFIIndicator
 from xtrader.strategies.feature_engine.indicators.volume.volume_ma import VolumeMAIndicator
 from xtrader.strategies.feature_engine.indicators.volume.volume_variation import VolumeVariationIndicator
 
@@ -50,7 +58,14 @@ def build_default_indicator_registry() -> IndicatorRegistry:
     for indicator in (
         MAIndicator(),
         EMAIndicator(),
+        FRAMAIndicator(),
+        HTTrendlineIndicator(),
+        KAMAIndicator(),
         MACDIndicator(),
+        MACDStateIndicator(),
+        MAMAIndicator(),
+        SupportProximityIndicator(),
+        TRIXIndicator(),
         DMIIndicator(),
         RSIIndicator(),
         KDIndicator(),
@@ -59,6 +74,7 @@ def build_default_indicator_registry() -> IndicatorRegistry:
         ATRPctRankIndicator(),
         BollingerIndicator(),
         StdDevIndicator(),
+        MFIIndicator(),
         VolumeMAIndicator(),
         VolumeVariationIndicator(),
     ):

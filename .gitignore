@@ -40,3 +40,8 @@ data/
 # IDE settings
 .idea/
 .vscode/
+
+# Strategy R&D local assets (keep local, not tracked by git)
+/configs/strategy-profiles/
+/docs/02-strategy/
+/docs/05-agent/session-notes/

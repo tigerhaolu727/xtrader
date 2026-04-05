@@ -87,20 +87,54 @@ class GroupRuleSpec(BaseModel):
         "direction_score",
         "volume_score",
         "pullback_score",
+        "tf_points_score_v1",
     ]
-    input_refs: list[FeatureRef] = Field(min_length=1)
+    input_refs: list[FeatureRef] = Field(default_factory=list)
+    input_map: dict[NonEmptyString, FeatureRef] = Field(default_factory=dict)
+    long_conditions: list[dict[str, Any]] = Field(default_factory=list)
+    short_conditions: list[dict[str, Any]] = Field(default_factory=list)
+    max_abs_points: Annotated[float | None, Field(gt=0.0)] = None
     params: dict[str, Any] = Field(default_factory=dict)
     nan_policy: Literal["neutral_zero"] = "neutral_zero"
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def _validate_score_fn_shape(self) -> "GroupRuleSpec":
+        if self.score_fn == "tf_points_score_v1":
+            if not self.input_map:
+                raise ValueError("tf_points_score_v1 requires non-empty input_map")
+            if not self.long_conditions and not self.short_conditions:
+                raise ValueError("tf_points_score_v1 requires long_conditions or short_conditions")
+            if self.max_abs_points is None:
+                raise ValueError("tf_points_score_v1 requires max_abs_points")
+            return self
+
+        if not self.input_refs:
+            raise ValueError(f"{self.score_fn} requires non-empty input_refs")
+        if self.input_map:
+            raise ValueError(f"{self.score_fn} does not support input_map")
+        if self.long_conditions or self.short_conditions:
+            raise ValueError(f"{self.score_fn} does not support long_conditions/short_conditions")
+        if self.max_abs_points is not None:
+            raise ValueError(f"{self.score_fn} does not support max_abs_points")
+        return self
 
 
 class GroupSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     group_id: NonEmptyString
+    timeframe: Timeframe | None = None
     rules: list[GroupRuleSpec] = Field(min_length=1)
     rule_weights: dict[str, Annotated[float, Field(ge=0.0)]] = Field(min_length=1)
     enabled: bool = True
+
+
+class StateScoreAdjustmentSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fn: NonEmptyString
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class RegimeSpec(BaseModel):
@@ -112,6 +146,7 @@ class RegimeSpec(BaseModel):
     classifier: ClassifierSpec
     groups: list[GroupSpec] = Field(min_length=1)
     state_group_weights: dict[str, dict[str, Annotated[float, Field(ge=0.0)]]]
+    state_score_adjustments: dict[StateName, StateScoreAdjustmentSpec] = Field(default_factory=dict)
 
     @field_validator("states")
     @classmethod
@@ -156,6 +191,7 @@ class SignalSpec(BaseModel):
     cooldown_bars: Annotated[int, Field(ge=0)] = 0
     cooldown_scope: Literal["symbol_action"] = "symbol_action"
     reason_code_map: dict[str, NonEmptyString] = Field(min_length=1)
+    entry_gate_spec: dict[str, Any] | None = None
 
 
 class SizeModelParamsFixedFraction(BaseModel):

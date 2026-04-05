@@ -515,6 +515,56 @@
         }
       };
 
+      const asObject = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
+
+      const deriveConditionHitsFromRuleTrace = (ruleTrace) => {
+        const payload = asObject(ruleTrace);
+        const mergedResults = {};
+        const mergedHits = new Set();
+        let hasData = false;
+        Object.keys(payload).forEach((ruleId) => {
+          const item = asObject(payload[ruleId]);
+          const conditionHits = asObject(item.condition_hits);
+          const results = asObject(conditionHits.results);
+          const hits = Array.isArray(conditionHits.hits) ? conditionHits.hits : [];
+          if (Object.keys(results).length > 0 || hits.length > 0) hasData = true;
+          Object.keys(results).forEach((key) => {
+            mergedResults[String(key)] = Boolean(mergedResults[String(key)] || results[key]);
+          });
+          hits.forEach((key) => mergedHits.add(String(key)));
+        });
+        if (!hasData) return null;
+        return {
+          hits: Array.from(mergedHits.values()),
+          results: mergedResults,
+        };
+      };
+
+      const extractSignalV1Evidence = (row) => {
+        const ruleParsed = parseJsonPayload(row.ruleResultsJson);
+        const signalParsed = parseJsonPayload(row.signalDecisionJson);
+        const ruleObj = ruleParsed.ok ? asObject(ruleParsed.value) : {};
+        const signalObj = signalParsed.ok ? asObject(signalParsed.value) : {};
+
+        let conditionHits = null;
+        if (ruleObj.condition_hits !== undefined) {
+          conditionHits = ruleObj.condition_hits;
+        } else if (ruleObj.rule_trace !== undefined) {
+          conditionHits = deriveConditionHitsFromRuleTrace(ruleObj.rule_trace);
+        }
+
+        const gateResults = signalObj.gate_results !== undefined ? signalObj.gate_results : null;
+        const scoreAdjustment = ruleObj.score_adjustment !== undefined ? ruleObj.score_adjustment : null;
+        const macdState = ruleObj.macd_state !== undefined ? ruleObj.macd_state : null;
+
+        return {
+          condition_hits: conditionHits === null ? "N/A" : conditionHits,
+          gate_results: gateResults === null ? "N/A" : gateResults,
+          score_adjustment: scoreAdjustment === null ? "N/A" : scoreAdjustment,
+          macd_state: macdState === null ? "N/A" : macdState,
+        };
+      };
+
       const renderCandidateList = () => {
         const rows = state.queryResult || [];
         if (!rows.length) {
@@ -644,9 +694,10 @@
             ? parseJsonPayload(row.groupWeightsJson).value
             : row.groupWeightsJson,
         })));
-        detailPane.appendChild(renderJsonSection("5. 信号链（signal_decision_json）", row.signalDecisionJson));
-        detailPane.appendChild(renderJsonSection("6. 风险链（risk_decision_json）", row.riskDecisionJson));
-        detailPane.appendChild(renderJsonSection("7. 最终结果（action_result_json）", row.actionResultJson));
+        detailPane.appendChild(renderJsonSection("5. Signal V1 证据链（condition_hits/gate_results/score_adjustment/macd_state）", JSON.stringify(extractSignalV1Evidence(row))));
+        detailPane.appendChild(renderJsonSection("6. 信号链（signal_decision_json）", row.signalDecisionJson));
+        detailPane.appendChild(renderJsonSection("7. 风险链（risk_decision_json）", row.riskDecisionJson));
+        detailPane.appendChild(renderJsonSection("8. 最终结果（action_result_json）", row.actionResultJson));
       };
 
       const applyHandoffPayload = (payload) => {

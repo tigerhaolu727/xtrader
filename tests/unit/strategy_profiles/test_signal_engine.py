@@ -42,9 +42,14 @@ def _signal_profile(signal_spec: dict[str, object]) -> dict[str, object]:
     return {"signal_spec": signal_spec}
 
 
-def _scoring_df(scores: list[float], states: list[str], symbol: str = "BTCUSDT") -> pd.DataFrame:
+def _scoring_df(
+    scores: list[float],
+    states: list[str],
+    symbol: str = "BTCUSDT",
+    condition_results: list[dict[str, bool]] | None = None,
+) -> pd.DataFrame:
     ts = pd.date_range(datetime(2026, 1, 1, tzinfo=timezone.utc), periods=len(scores), freq="5min", tz="UTC")
-    return pd.DataFrame(
+    payload = pd.DataFrame(
         {
             "timestamp": ts,
             "symbol": [symbol] * len(scores),
@@ -52,6 +57,9 @@ def _scoring_df(scores: list[float], states: list[str], symbol: str = "BTCUSDT")
             "state": states,
         }
     )
+    if condition_results is not None:
+        payload["condition_results"] = condition_results
+    return payload
 
 
 def test_signal_engine_profile_positive() -> None:
@@ -259,3 +267,56 @@ def test_signal_engine_missing_reason_mapping_negative() -> None:
     scoring = _scoring_df([0.9], ["TREND_CLEAN"])
     with pytest.raises(ValueError, match=r"XTRSP005::MISSING_REASON_CODE_MAPPING::"):
         SignalEngine().run(resolved_profile=broken, scoring_df=scoring)
+
+
+def test_signal_engine_entry_gate_blocks_and_allows_positive() -> None:
+    signal_spec = {
+        "entry_rules": [
+            {
+                "id": "entry_long",
+                "action": "ENTER_LONG",
+                "priority_rank": 1,
+                "score_range": {"min": 0.5, "max": None, "min_inclusive": True, "max_inclusive": False},
+                "enabled": True,
+            }
+        ],
+        "exit_rules": [],
+        "hold_rules": [
+            {
+                "id": "hold_default",
+                "action": "HOLD",
+                "priority_rank": 99,
+                "score_range": {"min": -1.0, "max": 1.0, "min_inclusive": True, "max_inclusive": True},
+                "enabled": True,
+            }
+        ],
+        "cooldown_bars": 0,
+        "cooldown_scope": "symbol_action",
+        "reason_code_map": {
+            "entry_long": "LONG",
+            "hold_default": "HOLD",
+        },
+        "entry_gate_spec": {
+            "enabled": True,
+            "gates": [
+                {
+                    "id": "long_gate_std",
+                    "side": "LONG",
+                    "level": "STANDARD",
+                    "mode": "n_of_m",
+                    "min_hit": 1,
+                    "conditions": [{"key": "cond_ok", "required": False}],
+                }
+            ],
+        },
+    }
+    scoring_blocked = _scoring_df([0.8], ["S"], condition_results=[{}])
+    blocked = SignalEngine().run(resolved_profile=_signal_profile(signal_spec), scoring_df=scoring_blocked).frame
+    assert blocked.loc[0, "action"] == "HOLD"
+    assert isinstance(blocked.loc[0, "gate_results"], list)
+    assert blocked.loc[0, "selected_gate_id"] is None
+
+    scoring_allowed = _scoring_df([0.8], ["S"], condition_results=[{"cond_ok": True}])
+    allowed = SignalEngine().run(resolved_profile=_signal_profile(signal_spec), scoring_df=scoring_allowed).frame
+    assert allowed.loc[0, "action"] == "ENTER_LONG"
+    assert allowed.loc[0, "selected_gate_id"] == "long_gate_std"

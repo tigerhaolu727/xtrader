@@ -255,3 +255,143 @@ def test_classifier_priority_applies_before_second_rule() -> None:
     )
     out = result.frame
     assert out.loc[0, "state"] == "B"
+
+
+def _tf_points_profile_with_adjustment() -> dict[str, object]:
+    return {
+        "regime_spec": {
+            "states": ["BASE"],
+            "classifier": {
+                "inputs": ["f:5m:x:value"],
+                "rules": [
+                    {
+                        "priority": 1,
+                        "target_state": "BASE",
+                        "conditions": [{"ref": "f:5m:x:value", "op": ">", "value": -999.0}],
+                        "enabled": True,
+                    }
+                ],
+                "default_state": "BASE",
+            },
+            "groups": [
+                {
+                    "group_id": "tf_5m",
+                    "timeframe": "5m",
+                    "rules": [
+                        {
+                            "rule_id": "tf_points_rule",
+                            "score_fn": "tf_points_score_v1",
+                            "input_refs": [],
+                            "input_map": {
+                                "rsi": "f:5m:rsi:value",
+                                "macd_state": "f:5m:macd_state:value",
+                            },
+                            "long_conditions": [
+                                {
+                                    "id": "cond_rsi_lt_30",
+                                    "points": 1.0,
+                                    "expr": {"op": "lt", "left": {"ref": "rsi"}, "right": {"value": 30.0}},
+                                },
+                                {
+                                    "id": "cond_macd_in_set",
+                                    "points": 1.0,
+                                    "expr": {"op": "in_set", "left": {"ref": "macd_state"}, "set": ["NEAR_GOLDEN", "GOLDEN_EXPAND"]},
+                                },
+                            ],
+                            "short_conditions": [
+                                {
+                                    "id": "cond_rsi_gt_70",
+                                    "points": 1.0,
+                                    "expr": {"op": "gt", "left": {"ref": "rsi"}, "right": {"value": 70.0}},
+                                }
+                            ],
+                            "max_abs_points": 4.0,
+                            "params": {},
+                            "nan_policy": "neutral_zero",
+                            "enabled": True,
+                        }
+                    ],
+                    "rule_weights": {"tf_points_rule": 1.0},
+                    "enabled": True,
+                }
+            ],
+            "state_group_weights": {
+                "BASE": {"tf_5m": 1.0},
+            },
+            "state_score_adjustments": {
+                "BASE": {
+                    "fn": "coherence_adjust_v1",
+                    "params": {"gain": 0.5},
+                }
+            },
+        }
+    }
+
+
+def _tf_points_model_df() -> pd.DataFrame:
+    ts = pd.date_range(datetime(2026, 1, 1, tzinfo=timezone.utc), periods=3, freq="5min", tz="UTC")
+    return pd.DataFrame(
+        {
+            "timestamp": ts,
+            "symbol": ["BTCUSDT"] * 3,
+            "f:5m:x:value": [0.0, 0.0, 0.0],
+            "f:5m:rsi:value": [20.0, 50.0, 80.0],
+            "f:5m:macd_state:value": ["NEAR_GOLDEN", "NONE", "GOLDEN_EXPAND"],
+        }
+    )
+
+
+def _tf_points_bindings() -> dict[str, dict[str, str]]:
+    return {"tf_points_rule": {"rsi": "f:5m:rsi:value", "macd_state": "f:5m:macd_state:value"}}
+
+
+def test_regime_scoring_tf_points_emits_condition_trace_positive() -> None:
+    result = RegimeScoringEngine().run(
+        resolved_profile=_tf_points_profile_with_adjustment(),
+        resolved_input_bindings=_tf_points_bindings(),
+        model_df=_tf_points_model_df(),
+    ).frame
+    assert {"condition_results", "condition_hits", "rule_traces", "score_base", "score_adjustment", "state_adjustment_detail"}.issubset(
+        set(result.columns)
+    )
+    row0 = result.iloc[0]
+    assert bool(row0["condition_results"]["cond_rsi_lt_30"]) is True
+    assert "cond_rsi_lt_30" in row0["condition_hits"]
+    assert "cond_macd_in_set" in row0["condition_hits"]
+    assert "tf_points_rule" in row0["rule_traces"]
+    assert bool(row0["rule_traces"]["tf_points_rule"]["condition_hits"]["results"]["cond_rsi_lt_30"]) is True
+
+
+def test_regime_scoring_state_adjustment_applies_positive() -> None:
+    result = RegimeScoringEngine().run(
+        resolved_profile=_tf_points_profile_with_adjustment(),
+        resolved_input_bindings=_tf_points_bindings(),
+        model_df=_tf_points_model_df(),
+    ).frame
+    row0 = result.iloc[0]
+    assert float(row0["score_total"]) > float(row0["score_base"])
+    assert float(row0["score_adjustment"]) > 0.0
+    assert row0["state_adjustment_detail"]["fn"] == "coherence_adjust_v1"
+
+
+def test_regime_scoring_extracts_macd_state_from_feature_refs_positive() -> None:
+    model_df = _tf_points_model_df().copy(deep=True)
+    model_df["f:5m:macd_state_main:state_code_num"] = [1.0, 0.0, 3.0]
+    model_df["f:5m:macd_state_main:near_cross_num"] = [1.0, 0.0, -1.0]
+    model_df["f:5m:macd_state_main:reject_long_flag"] = [0.0, 1.0, 0.0]
+    model_df["f:5m:macd_state_main:reject_short_flag"] = [1.0, 0.0, 0.0]
+    model_df["f:5m:macd_state_main:gap"] = [-0.01, 0.0, 0.02]
+    model_df["f:5m:macd_state_main:gap_slope"] = [0.01, -0.01, 0.02]
+    model_df["f:5m:macd_state_main:gap_pct"] = [0.0001, 0.0, 0.0002]
+
+    result = RegimeScoringEngine().run(
+        resolved_profile=_tf_points_profile_with_adjustment(),
+        resolved_input_bindings=_tf_points_bindings(),
+        model_df=model_df,
+    ).frame
+    row0 = result.iloc[0]["macd_state"]
+    assert float(row0["state_code"]) == pytest.approx(1.0)
+    assert float(row0["near_cross"]) == pytest.approx(1.0)
+    assert float(row0["reject_long"]) == pytest.approx(0.0)
+    assert float(row0["reject_short"]) == pytest.approx(1.0)
+    assert float(row0["meta"]["gap"]) == pytest.approx(-0.01)
